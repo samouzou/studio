@@ -12,8 +12,8 @@ import { MOCK_BRAND_NAMES, MOCK_PROJECT_NAMES } from "@/data/mock-data";
 
 export function DashboardFilters() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
-  const [selectedBrand, setSelectedBrand] = useState<string>("");
-  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [selectedBrand, setSelectedBrand] = useState<string>("all");
+  const [selectedProject, setSelectedProject] = useState<string>("all");
 
   return (
     <div className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 shadow-sm">
@@ -25,7 +25,7 @@ export function DashboardFilters() {
           <SelectValue placeholder="All Brands" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">All Brands</SelectItem>
+          <SelectItem value="all">All Brands</SelectItem>
           {MOCK_BRAND_NAMES.map(brand => (
             <SelectItem key={brand} value={brand}>{brand}</SelectItem>
           ))}
@@ -69,14 +69,14 @@ export function DashboardFilters() {
           <SelectValue placeholder="All Projects" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">All Projects</SelectItem>
+          <SelectItem value="all">All Projects</SelectItem>
            {MOCK_PROJECT_NAMES.map(project => (
             <SelectItem key={project} value={project}>{project}</SelectItem>
           ))}
         </SelectContent>
       </Select>
 
-      <Button variant="ghost" onClick={() => {
+      <Button variant="ghost" onClick={() => { 
         setDateRange(undefined);
         setSelectedBrand("");
         setSelectedProject("");

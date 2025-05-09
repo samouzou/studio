@@ -1,26 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import type { ComponentType, ComponentProps, JSXElementConstructor } from "react";
+import { useState, Suspense, lazy } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { LucideIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 
 interface IntegrationCardProps {
   serviceName: string;
-  serviceIcon: LucideIcon;
+  ServiceIcon: ComponentType<any>;
   description: string;
   isConnectedInitial?: boolean;
 }
 
-export function IntegrationCard({
-  serviceName,
-  serviceIcon: Icon,
-  description,
-  isConnectedInitial = false,
-}: IntegrationCardProps) {
+interface IntegrationCardPropsWithLoader extends Omit<IntegrationCardProps, 'ServiceIcon'> {
+  serviceIconName: string;
+}
+
+export function IntegrationCard({ serviceName, serviceIconName, description, isConnectedInitial = false }: IntegrationCardPropsWithLoader) {
   const [isConnected, setIsConnected] = useState(isConnectedInitial);
   const [isLoading, setIsLoading] = useState(false);
+
+  function ServiceIconComponent(props: ComponentProps<any>) {
+    let LazyServiceIcon: ComponentType<any>;
+
+    switch (serviceIconName) {
+      case "Mail":
+        LazyServiceIcon = lazy(() => import("lucide-react").then((module) => ({ default: module.Mail })));
+        break;
+      case "Database":
+        LazyServiceIcon = lazy(() => import("lucide-react").then((module) => ({ default: module.Database })));
+        break;
+      case "Cloud":
+        LazyServiceIcon = lazy(() => import("lucide-react").then((module) => ({ default: module.Cloud })));
+        break;
+      default:
+        throw new Error(`Unknown serviceIconName: ${serviceIconName}`);
+    }
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+          <LazyServiceIcon {...props} />
+        </Suspense>
+    );
+  }
+
 
   const handleToggleConnection = () => {
     setIsLoading(true);
@@ -35,7 +59,9 @@ export function IntegrationCard({
     <Card className="shadow-lg">
       <CardHeader className="flex flex-row items-start gap-4 space-y-0">
         <div className="p-2 bg-muted rounded-lg">
-          <Icon className="h-8 w-8 text-primary" />
+          <ServiceIconComponent className={cn("h-8 w-8 text-primary")} />
+
+
         </div>
         <div>
           <CardTitle>{serviceName}</CardTitle>

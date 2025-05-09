@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { GeistSans } from 'geist/font/sans';
-import { GeistMono } from 'geist/mono'; // Corrected import path
+import { GeistMono } from 'geist/font/mono'; // Corrected import path
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { MockAuthProvider } from '@/hooks/use-mock-auth';
