@@ -61,8 +61,16 @@ export function SidebarNav() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
-          <Scale className="h-7 w-7 text-primary group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8" />
-          <h1 className="text-xl font-semibold group-data-[collapsible=icon]:hidden">SoloLedger</h1>
+          {/* <Scale className="h-7 w-7 text-primary group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8" />
+          <h1 className="text-xl font-semibold group-data-[collapsible=icon]:hidden">Verza</h1> */}
+          <svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Icon */}
+            <path d="M10 10 C15 30, 25 30, 30 10 L35 30 C40 50, 50 50, 55 30" stroke="#5B2EFF" stroke-width="4" fill="none" stroke-linecap="round"/>
+
+            {/* Wordmark */}
+            <text x="70" y="38" font-family="Inter, sans-serif" font-size="28" fill="#1A1A1A" font-weight="600">Verza</text>
+          </svg>
+
         </div>
       </SidebarHeader>
       <SidebarContent>
