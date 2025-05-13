@@ -10,8 +10,8 @@ import {
   Settings,
   LogOut,
   UserCircle,
-  Bell,
-  Scale,
+  // Bell, // Bell not used
+  // Scale, // Scale icon for logo is replaced by SVG
   ChevronDown,
 } from "lucide-react";
 import {
@@ -22,7 +22,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarTrigger,
+  // SidebarTrigger, // SidebarTrigger not used here
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -35,8 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useMockAuth } from "@/hooks/use-mock-auth";
-import { MOCK_USER } from "@/data/mock-data";
+import { useAuth } from "@/hooks/use-auth"; // Updated import
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -47,30 +46,52 @@ const navItems = [
 
 export function SidebarNav() {
   const pathname = usePathname();
-  const { user, logout } = useMockAuth();
+  const { user, logout, isLoading } = useAuth(); // Updated hook usage
   const router = useRouter();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     router.push("/login");
   };
 
-  const activeUser = user || MOCK_USER; // Fallback to MOCK_USER if context.user is null
+  if (isLoading) {
+    // Optional: Show a loading state for the sidebar user info
+    return (
+      <Sidebar collapsible="icon">
+        <SidebarHeader className="p-4">
+           <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
+             <svg width="180" height="50" viewBox="0 0 200 50" fill="none" xmlns="http://www.w3.org/2000/svg" className="group-data-[collapsible=icon]:hidden">
+                <text x="0" y="35" fontFamily="Space Grotesk, sans-serif" fontSize="36" fontWeight="600" fill="hsl(var(--primary))">Verza</text>
+             </svg>
+             <svg width="40" height="40" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg" className="hidden group-data-[collapsible=icon]:block">
+                <text x="5" y="35" fontFamily="Space Grotesk, sans-serif" fontSize="36" fontWeight="600" fill="hsl(var(--primary))">V</text>
+             </svg>
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          {/* Skeleton for nav items can be added if desired */}
+        </SidebarContent>
+        <SidebarFooter className="p-2">
+          <div className="h-14 w-full rounded-md bg-muted animate-pulse" />
+        </SidebarFooter>
+      </Sidebar>
+    );
+  }
+
+
+  const activeUser = user; 
+  const userInitial = activeUser?.displayName ? activeUser.displayName.charAt(0).toUpperCase() : (activeUser?.email ? activeUser.email.charAt(0).toUpperCase() : 'U');
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
-          {/* <Scale className="h-7 w-7 text-primary group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8" />
-          <h1 className="text-xl font-semibold group-data-[collapsible=icon]:hidden">Verza</h1> */}
-          <svg width="200" height="60" viewBox="0 0 200 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* Icon */}
-            <path d="M10 10 C15 30, 25 30, 30 10 L35 30 C40 50, 50 50, 55 30" stroke="#5B2EFF" stroke-width="4" fill="none" stroke-linecap="round"/>
-
-            {/* Wordmark */}
-            <text x="70" y="38" font-family="Inter, sans-serif" font-size="28" fill="#1A1A1A" font-weight="600">Verza</text>
-          </svg>
-
+           <svg width="180" height="50" viewBox="0 0 200 50" fill="none" xmlns="http://www.w3.org/2000/svg" className="group-data-[collapsible=icon]:hidden">
+             <text x="0" y="35" fontFamily="Space Grotesk, sans-serif" fontSize="36" fontWeight="600" fill="hsl(var(--primary))">Verza</text>
+           </svg>
+            <svg width="40" height="40" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg" className="hidden group-data-[collapsible=icon]:block">
+             <text x="5" y="35" fontFamily="Space Grotesk, sans-serif" fontSize="36" fontWeight="600" fill="hsl(var(--primary))">V</text>
+           </svg>
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -96,38 +117,45 @@ export function SidebarNav() {
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter className="p-2">
-         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="w-full justify-start p-2 h-auto group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto">
-              <Avatar className="h-9 w-9 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8">
-                <AvatarImage src={activeUser.avatarUrl} alt={activeUser.name} data-ai-hint="user avatar" />
-                <AvatarFallback>{activeUser.name.charAt(0)}</AvatarFallback>
-              </Avatar>
-              <div className="ml-3 text-left group-data-[collapsible=icon]:hidden">
-                <p className="text-sm font-medium">{activeUser.name}</p>
-                <p className="text-xs text-muted-foreground">{activeUser.email}</p>
-              </div>
-              <ChevronDown className="ml-auto h-4 w-4 group-data-[collapsible=icon]:hidden" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="start" className="w-56 mb-2 ml-2">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <UserCircle className="mr-2 h-4 w-4" />
-              <span>Profile</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings className="mr-2 h-4 w-4" />
-              <span>Settings</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Log out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+         {activeUser ? (
+            <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="w-full justify-start p-2 h-auto group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto">
+                <Avatar className="h-9 w-9 group-data-[collapsible=icon]:h-8 group-data-[collapsible=icon]:w-8">
+                  {activeUser.avatarUrl && <AvatarImage src={activeUser.avatarUrl} alt={activeUser.displayName || 'User Avatar'} data-ai-hint="user avatar" />}
+                  <AvatarFallback>{userInitial}</AvatarFallback>
+                </Avatar>
+                <div className="ml-3 text-left group-data-[collapsible=icon]:hidden">
+                  <p className="text-sm font-medium truncate max-w-[120px]">{activeUser.displayName || 'User'}</p>
+                  <p className="text-xs text-muted-foreground truncate max-w-[120px]">{activeUser.email || 'No email'}</p>
+                </div>
+                <ChevronDown className="ml-auto h-4 w-4 group-data-[collapsible=icon]:hidden" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="start" className="w-56 mb-2 ml-2">
+              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled>
+                <UserCircle className="mr-2 h-4 w-4" />
+                <span>Profile</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>
+                <Settings className="mr-2 h-4 w-4" />
+                <span>Settings</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Log out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+         ) : (
+          <Button variant="ghost" className="w-full justify-start p-2 h-auto group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:w-auto" onClick={() => router.push('/login')}>
+             <UserCircle className="h-8 w-8" />
+             <span className="ml-3 group-data-[collapsible=icon]:hidden">Login</span>
+          </Button>
+         )}
       </SidebarFooter>
     </Sidebar>
   );

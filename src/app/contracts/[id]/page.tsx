@@ -1,25 +1,27 @@
 "use client";
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Edit3, Trash2, FileText, DollarSign, CalendarDays, Briefcase, Info, CheckCircle, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Edit3, Trash2, FileText, DollarSign, CalendarDays, Briefcase, Info, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { MOCK_CONTRACTS } from '@/data/mock-data';
 import type { Contract } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ContractStatusBadge } from '@/components/contracts/contract-status-badge';
-import { Separator } from '@/components/ui/separator';
+// import { Separator } from '@/components/ui/separator'; // Not used
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAuth } from '@/hooks/use-auth';
+import { db, doc, getDoc } from '@/lib/firebase';
+import { Skeleton } from '@/components/ui/skeleton';
 
-function DetailItem({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: React.ReactNode }) {
+function DetailItem({ icon: Icon, label, value, valueClassName }: { icon: React.ElementType, label: string, value: React.ReactNode, valueClassName?: string }) {
   return (
     <div className="flex items-start space-x-3">
       <Icon className="h-5 w-5 text-primary mt-1 flex-shrink-0" />
       <div>
         <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="font-medium">{value || 'N/A'}</p>
+        <p className={`font-medium ${valueClassName}`}>{value || 'N/A'}</p>
       </div>
     </div>
   );
@@ -27,19 +29,69 @@ function DetailItem({ icon: Icon, label, value }: { icon: React.ElementType, lab
 
 export default function ContractDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const [contract, setContract] = useState<Contract | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const { user, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
-    if (id) {
-      const foundContract = MOCK_CONTRACTS.find(c => c.id === id);
-      setContract(foundContract || null);
+    if (id && user && !authLoading) {
+      setIsLoading(true);
+      const fetchContract = async () => {
+        try {
+          const contractDocRef = doc(db, 'contracts', id as string);
+          const contractSnap = await getDoc(contractDocRef);
+          if (contractSnap.exists() && contractSnap.data().userId === user.uid) {
+            setContract({ id: contractSnap.id, ...contractSnap.data() } as Contract);
+          } else {
+            setContract(null); // Not found or not authorized
+            toast({ title: "Error", description: "Contract not found or you don't have permission to view it.", variant: "destructive" });
+            router.push('/contracts'); // Redirect if not found/authorized
+          }
+        } catch (error) {
+          console.error("Error fetching contract:", error);
+          setContract(null);
+          // Consider showing a toast message here
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchContract();
+    } else if (!authLoading && !user) {
+      // Not logged in, redirect or show message
+      router.push('/login');
+    } else if (!id) {
+        setIsLoading(false); // No ID, nothing to load
     }
-  }, [id]);
+  }, [id, user, authLoading, router]);
+
+  // Added a toast import for error messages
+  const { toast } = (typeof window !== 'undefined' && require('@/hooks/use-toast')) || { toast: () => {} };
+
+
+  if (authLoading || isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-12 w-3/4" />
+        <Skeleton className="h-8 w-1/2" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <Skeleton className="h-48 w-full rounded-lg" />
+            <Skeleton className="h-32 w-full rounded-lg" />
+          </div>
+          <div className="lg:col-span-1 space-y-6">
+            <Skeleton className="h-40 w-full rounded-lg" />
+            <Skeleton className="h-40 w-full rounded-lg" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!contract) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
+      <div className="flex flex-col items-center justify-center h-full pt-10">
          <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Contract Not Found</h2>
         <p className="text-muted-foreground mb-6">The contract you are looking for does not exist or could not be loaded.</p>
@@ -51,11 +103,15 @@ export default function ContractDetailPage() {
       </div>
     );
   }
+  
+  const formattedDueDate = contract.dueDate ? new Date(contract.dueDate + 'T00:00:00').toLocaleDateString() : 'N/A';
+  const formattedCreatedAt = contract.createdAt ? new Date(contract.createdAt).toLocaleDateString() : 'N/A';
+
 
   return (
     <>
       <PageHeader
-        title={contract.brand + " - " + (contract.fileName || "Contract Details")}
+        title={(contract.brand || "Contract") + " - " + (contract.fileName || "Details")}
         description={`Details for contract ID: ${contract.id}`}
         actions={
           <div className="flex gap-2">
@@ -64,8 +120,8 @@ export default function ContractDetailPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Link>
             </Button>
-            <Button variant="outline"><Edit3 className="mr-2 h-4 w-4" /> Edit</Button>
-            <Button variant="destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete</Button>
+            <Button variant="outline" disabled><Edit3 className="mr-2 h-4 w-4" /> Edit</Button>
+            <Button variant="destructive" disabled><Trash2 className="mr-2 h-4 w-4" /> Delete</Button>
           </div>
         }
       />
@@ -81,12 +137,12 @@ export default function ContractDetailPage() {
               <CardDescription>Core details of the agreement with {contract.brand}.</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-              <DetailItem icon={FileText} label="Brand" value={contract.brand} />
+              <DetailItem icon={Briefcase} label="Brand" value={contract.brand} />
               <DetailItem icon={DollarSign} label="Amount" value={`$${contract.amount.toLocaleString()}`} />
-              <DetailItem icon={CalendarDays} label="Due Date" value={new Date(contract.dueDate).toLocaleDateString()} />
-              <DetailItem icon={Briefcase} label="Contract Type" value={<span className="capitalize">{contract.contractType}</span>} />
-              <DetailItem icon={Info} label="File Name" value={contract.fileName} />
-               <DetailItem icon={CalendarDays} label="Created At" value={new Date(contract.createdAt).toLocaleDateString()} />
+              <DetailItem icon={CalendarDays} label="Due Date" value={formattedDueDate} />
+              <DetailItem icon={FileText} label="Contract Type" value={<span className="capitalize">{contract.contractType}</span>} />
+              <DetailItem icon={Info} label="File Name" value={contract.fileName || "N/A"} />
+               <DetailItem icon={CalendarDays} label="Created At" value={formattedCreatedAt} />
             </CardContent>
           </Card>
 
@@ -94,10 +150,10 @@ export default function ContractDetailPage() {
             <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle>Extracted Terms</CardTitle>
-                <CardDescription>Specific terms identified from the contract document.</CardDescription>
+                <CardDescription>Specific terms identified from the contract document by AI.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
-                {contract.extractedTerms.deliverables && (
+                {contract.extractedTerms.deliverables && contract.extractedTerms.deliverables.length > 0 && (
                   <div>
                     <strong className="text-foreground">Deliverables:</strong>
                     <ul className="list-disc list-inside ml-4 text-muted-foreground">
@@ -109,6 +165,7 @@ export default function ContractDetailPage() {
                 {contract.extractedTerms.usageRights && <p><strong className="text-foreground">Usage Rights:</strong> <span className="text-muted-foreground">{contract.extractedTerms.usageRights}</span></p>}
                 {contract.extractedTerms.terminationClauses && <p><strong className="text-foreground">Termination:</strong> <span className="text-muted-foreground">{contract.extractedTerms.terminationClauses}</span></p>}
                 {contract.extractedTerms.lateFeePenalty && <p><strong className="text-foreground">Late Fee/Penalty:</strong> <span className="text-muted-foreground">{contract.extractedTerms.lateFeePenalty}</span></p>}
+                 {Object.keys(contract.extractedTerms).length === 0 && <p className="text-muted-foreground">No specific terms were extracted by AI.</p>}
               </CardContent>
             </Card>
           )}
@@ -122,7 +179,7 @@ export default function ContractDetailPage() {
             <CardContent>
               <ScrollArea className="h-[200px] pr-3">
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {contract.summary || 'No summary available for this contract.'}
+                  {contract.summary || 'No AI summary available for this contract.'}
                 </p>
               </ScrollArea>
             </CardContent>

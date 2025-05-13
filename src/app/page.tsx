@@ -2,11 +2,12 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMockAuth } from '@/hooks/use-mock-auth';
+import { useAuth } from '@/hooks/use-auth'; // Updated import
+import { Loader2 } from 'lucide-react';
 
 export default function HomePage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useMockAuth();
+  const { isAuthenticated, isLoading } = useAuth(); // Updated hook usage
 
   useEffect(() => {
     if (!isLoading) {
@@ -19,8 +20,9 @@ export default function HomePage() {
   }, [router, isAuthenticated, isLoading]);
 
   return (
-    <div className="flex h-screen items-center justify-center">
-      <p>Loading SoloLedger Lite...</p>
+    <div className="flex h-screen flex-col items-center justify-center">
+      <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      <p className="mt-4 text-muted-foreground">Loading SoloLedger Lite...</p>
     </div>
   );
 }

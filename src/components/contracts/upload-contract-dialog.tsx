@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+// import { Input } from "@/components/ui/input"; // File input commented out for now
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -21,6 +21,8 @@ import { Loader2, UploadCloud, FileText, Wand2, AlertTriangle } from "lucide-rea
 import type { Contract } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/hooks/use-auth";
+import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp } from '@/lib/firebase'; // Firestore
 
 interface UploadContractDialogProps {
   onContractAdded: (newContract: Contract) => void;
@@ -29,26 +31,35 @@ interface UploadContractDialogProps {
 export function UploadContractDialog({ onContractAdded }: UploadContractDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [contractText, setContractText] = useState("");
-  const [fileName, setFileName] = useState("");
-  const [isParsing, startTransition] = useTransition();
+  const [fileName, setFileName] = useState(""); // Keep for manual entry or future file handling
+  const [isParsing, startParseTransition] = useTransition();
+  const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const [parsedDetails, setParsedDetails] = useState<ExtractContractDetailsOutput | null>(null);
   const [summary, setSummary] = useState<SummarizeContractTermsOutput | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      // For MVP, we're focusing on text input. File reading can be added later.
-      // For now, if a file is selected, we'll just use its name.
-      // User still needs to paste text.
-      // const text = await file.text();
-      // setContractText(text);
-      toast({ title: "File selected", description: `${file.name} selected. Please paste contract text below.` });
+  // Reset states when dialog closes
+  useEffect(() => {
+    if (!isOpen) {
+      setContractText("");
+      setFileName("");
+      setParsedDetails(null);
+      setSummary(null);
+      setParseError(null);
+      setIsSaving(false);
     }
-  };
+  }, [isOpen]);
+
+  // const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = event.target.files?.[0];
+  //   if (file) {
+  //     setFileName(file.name);
+  //     toast({ title: "File selected", description: `${file.name} selected. Please paste contract text below, or future versions will read file content.` });
+  //   }
+  // };
 
   const handleParseContract = async () => {
     if (!contractText.trim()) {
@@ -64,7 +75,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     setParsedDetails(null);
     setSummary(null);
 
-    startTransition(async () => {
+    startParseTransition(async () => {
       try {
         const [details, termsSummary] = await Promise.all([
           extractContractDetails({ contractText }),
@@ -89,34 +100,50 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     });
   };
 
-  const handleSaveContract = () => {
-    // For MVP, this is a mock save. In a real app, this would go to a database.
+  const handleSaveContract = async () => {
+    if (!user) {
+      toast({ title: "Authentication Error", description: "You must be logged in to save a contract.", variant: "destructive" });
+      return;
+    }
     if (!parsedDetails) {
       toast({ title: "Cannot Save", description: "No contract details parsed yet.", variant: "destructive" });
       return;
     }
-    const newContract: Contract = {
-      id: crypto.randomUUID(),
-      brand: parsedDetails.brand || "Unknown Brand",
-      amount: parsedDetails.amount || 0,
-      dueDate: parsedDetails.dueDate || new Date().toISOString().split('T')[0],
-      status: 'pending', // Default status
-      contractType: 'other', // Default type
-      contractText: contractText,
-      fileName: fileName || "Pasted Contract",
-      summary: summary?.summary || "No summary available.",
-      createdAt: new Date().toISOString(),
-      // extractedTerms: {} // Can be expanded later
-    };
-    onContractAdded(newContract);
-    toast({ title: "Contract Saved (Mock)", description: `${newContract.brand} contract added to the list.` });
-    setIsOpen(false);
-    // Reset state for next time
-    setContractText("");
-    setFileName("");
-    setParsedDetails(null);
-    setSummary(null);
-    setParseError(null);
+
+    setIsSaving(true);
+    try {
+      const newContractData: Omit<Contract, 'id'> = {
+        userId: user.uid,
+        brand: parsedDetails.brand || "Unknown Brand",
+        amount: parsedDetails.amount || 0,
+        dueDate: parsedDetails.dueDate || new Date().toISOString().split('T')[0],
+        status: 'pending',
+        contractType: 'other', // Default type, can be enhanced with a selector
+        contractText: contractText,
+        fileName: fileName || "Pasted Contract", // Use custom filename if available
+        summary: summary?.summary || "No summary available.",
+        extractedTerms: parsedDetails.extractedTerms || {},
+        createdAt: new Date().toISOString(), // Client-side timestamp
+        updatedAt: new Date().toISOString(), // Client-side timestamp
+        // For server-side timestamp: createdAt: firebaseServerTimestamp(),
+      };
+
+      const docRef = await addDoc(collection(db, 'contracts'), newContractData);
+      onContractAdded({ ...newContractData, id: docRef.id }); // Callback with the full contract including Firestore ID
+
+      toast({ title: "Contract Saved", description: `${newContractData.brand} contract added successfully.` });
+      setIsOpen(false);
+    } catch (error) {
+      console.error("Error saving contract:", error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      toast({
+        title: "Save Failed",
+        description: `Could not save contract: ${errorMessage}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -132,38 +159,35 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
             <FileText className="h-6 w-6 text-primary" /> Add New Contract
           </DialogTitle>
           <DialogDescription>
-            Upload a contract file (PDF, DOCX) or paste the text directly to parse its terms.
+            Paste the contract text below to parse its terms using AI. File upload coming soon.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="max-h-[calc(80vh-200px)]">
-        <div className="grid gap-6 p-1 pr-4"> {/* Added padding for scrollbar */}
-          {/* For MVP, focusing on text input. File upload UI is minimal. */}
-          {/* <div className="grid w-full max-w-sm items-center gap-1.5">
-            <Label htmlFor="contractFile">Upload Contract File</Label>
-            <Input id="contractFile" type="file" onChange={handleFileChange} accept=".pdf,.doc,.docx,.txt" />
-            {fileName && <p className="text-sm text-muted-foreground">Selected: {fileName}</p>}
+        <ScrollArea className="max-h-[calc(80vh-250px)]"> {/* Adjusted height */}
+        <div className="grid gap-6 p-1 pr-4">
+           <div>
+            <Label htmlFor="fileName">File Name (Optional)</Label>
+            <Input 
+              id="fileName" 
+              type="text" 
+              value={fileName} 
+              onChange={(e) => setFileName(e.target.value)}
+              placeholder="e.g., BrandX_Sponsorship_Q4.pdf"
+              className="mt-1" 
+            />
           </div>
-          <div className="relative my-2">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">Or</span>
-            </div>
-          </div> */}
           <div>
-            <Label htmlFor="contractText">Paste Contract Text</Label>
+            <Label htmlFor="contractText">Paste Contract Text*</Label>
             <Textarea
               id="contractText"
               value={contractText}
               onChange={(e) => setContractText(e.target.value)}
               placeholder="Paste the full text of your contract here..."
-              rows={10}
+              rows={8} // Reduced rows slightly
               className="mt-1"
             />
           </div>
 
-          <Button onClick={handleParseContract} disabled={isParsing || !contractText.trim()} className="w-full sm:w-auto">
+          <Button onClick={handleParseContract} disabled={isParsing || !contractText.trim() || isSaving} className="w-full sm:w-auto">
             {isParsing ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -182,8 +206,8 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
             </div>
           )}
 
-          {(parsedDetails || summary) && (
-            <div className="mt-6 space-y-4">
+          {(parsedDetails || summary) && !parseError && (
+            <div className="mt-2 space-y-4"> {/* Reduced mt */}
               <h3 className="text-lg font-semibold text-foreground">AI Analysis Results</h3>
               {parsedDetails && (
                 <Card>
@@ -193,7 +217,11 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
                   <CardContent className="space-y-2 text-sm">
                     <p><strong>Brand:</strong> {parsedDetails.brand || 'N/A'}</p>
                     <p><strong>Amount:</strong> {parsedDetails.amount ? `$${parsedDetails.amount.toLocaleString()}` : 'N/A'}</p>
-                    <p><strong>Due Date:</strong> {parsedDetails.dueDate ? new Date(parsedDetails.dueDate).toLocaleDateString() : 'N/A'}</p>
+                    <p><strong>Due Date:</strong> {parsedDetails.dueDate ? new Date(parsedDetails.dueDate + 'T00:00:00').toLocaleDateString() : 'N/A'}</p> {/* Ensure correct date parsing */}
+                    {parsedDetails.extractedTerms?.paymentMethod && <p><strong>Payment Method:</strong> {parsedDetails.extractedTerms.paymentMethod}</p>}
+                    {parsedDetails.extractedTerms?.deliverables && parsedDetails.extractedTerms.deliverables.length > 0 && (
+                        <p><strong>Deliverables:</strong> {parsedDetails.extractedTerms.deliverables.join(', ')}</p>
+                    )}
                   </CardContent>
                 </Card>
               )}
@@ -212,8 +240,9 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         </div>
         </ScrollArea>
         <DialogFooter className="pt-4 border-t">
-          <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
-          <Button onClick={handleSaveContract} disabled={isParsing || !parsedDetails}>
+          <Button variant="outline" onClick={() => setIsOpen(false)} disabled={isSaving}>Cancel</Button>
+          <Button onClick={handleSaveContract} disabled={isParsing || !parsedDetails || isSaving}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Save Contract
           </Button>
         </DialogFooter>

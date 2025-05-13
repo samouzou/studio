@@ -1,11 +1,12 @@
 export interface Contract {
-  id: string;
+  id: string; // Document ID from Firestore
+  userId: string; // Firebase Auth User ID
   brand: string;
   amount: number;
   dueDate: string; // YYYY-MM-DD
   status: 'pending' | 'paid' | 'overdue' | 'at_risk' | 'invoiced';
   contractType: 'sponsorship' | 'consulting' | 'affiliate' | 'retainer' | 'other';
-  extractedTerms?: {
+  extractedTerms?: { // Made optional and fields within are optional
     paymentMethod?: string;
     usageRights?: string;
     terminationClauses?: string;
@@ -15,7 +16,8 @@ export interface Contract {
   summary?: string;
   contractText?: string;
   fileName?: string;
-  createdAt: string; // ISO Date string
+  createdAt: string; // ISO Date string (consider Firebase Timestamp for server-side generation)
+  updatedAt?: string; // ISO Date string (optional, can be set on updates)
 }
 
 export interface EarningsDataPoint {

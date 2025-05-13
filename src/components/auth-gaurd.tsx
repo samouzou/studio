@@ -1,20 +1,24 @@
 "use client";
 
-import { useMockAuth } from "@/hooks/use-mock-auth";
+import { useAuth } from "@/hooks/use-auth"; // Updated import
 import { useRouter, usePathname } from "next/navigation";
 import type { ReactNode} from 'react';
 import { useEffect } from "react";
-import { AppLayout } from "@/components/layout/app-layout"; // Import AppLayout
-import { Skeleton } from "@/components/ui/skeleton"; // For loading state
+import { AppLayout } from "@/components/layout/app-layout";
+import { Skeleton } from "@/components/ui/skeleton"; 
 
 export function AuthGuard({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useMockAuth();
+  const { isAuthenticated, isLoading, user } = useAuth(); // Updated hook usage
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated && pathname !== "/login") {
       router.push("/login");
+    }
+    // Redirect authenticated users away from login page
+    if (!isLoading && isAuthenticated && pathname === "/login") {
+      router.push("/dashboard");
     }
   }, [isAuthenticated, isLoading, router, pathname]);
 
@@ -30,22 +34,16 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!isAuthenticated && pathname !== "/login") {
-    // This case should ideally be handled by the useEffect redirect,
-    // but as a fallback, show loading or null.
-    return null; 
+  // If not authenticated and on login page, render children (login page itself)
+  if (!isAuthenticated && pathname === "/login") {
+    return <>{children}</>;
   }
   
-  if (isAuthenticated && pathname === "/login") {
-    router.push("/dashboard"); // Redirect to dashboard if authenticated and on login page
-    return null;
-  }
-
   // If authenticated and not on login page, wrap with AppLayout
   if (isAuthenticated && pathname !== "/login") {
     return <AppLayout>{children}</AppLayout>;
   }
 
-  // If not authenticated and on login page, render children (login page itself)
-  return <>{children}</>;
+  // Fallback for edge cases (e.g. redirecting)
+  return null;
 }
