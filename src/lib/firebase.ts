@@ -26,7 +26,7 @@ import {
   updateDoc,
   writeBatch
 } from 'firebase/firestore';
-// import { getStorage } from 'firebase/storage'; // Uncomment if you plan to use Firebase Storage
+import { getStorage } from 'firebase/storage'; // Uncomment if you plan to use Firebase Storage
 
 const firebaseConfigValues = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -60,7 +60,7 @@ const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-// const storage = getStorage(app); // Uncomment if using Storage
+const storage = getStorage(app); // Uncomment if using Storage
 
 const googleAuthProvider = new GoogleAuthProvider();
 
@@ -90,6 +90,6 @@ export {
   where, 
   deleteDoc, 
   updateDoc,
-  writeBatch
-  // storage // Uncomment if using Storage
+  writeBatch,
+  storage // Uncomment if using Storage
 };
