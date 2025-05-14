@@ -12,9 +12,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ContractStatusBadge } from '@/components/contracts/contract-status-badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/hooks/use-auth';
-import { db, doc, getDoc, Timestamp } from '@/lib/firebase'; // Added Timestamp
+import { db, doc, getDoc, Timestamp } from '@/lib/firebase';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from "@/hooks/use-toast"; // Corrected import
+import { useToast } from "@/hooks/use-toast";
 
 function DetailItem({ icon: Icon, label, value, valueClassName }: { icon: React.ElementType, label: string, value: React.ReactNode, valueClassName?: string }) {
   return (
@@ -46,21 +46,41 @@ export default function ContractDetailPage() {
           const contractSnap = await getDoc(contractDocRef);
           if (contractSnap.exists() && contractSnap.data().userId === user.uid) {
             const data = contractSnap.data();
-            // Ensure createdAt and updatedAt are Timestamps, convert if they are strings (e.g. from older data)
+            
             let createdAt = data.createdAt;
-            if (typeof createdAt === 'string') {
-              createdAt = Timestamp.fromDate(new Date(createdAt));
-            }
-            let updatedAt = data.updatedAt;
-            if (typeof updatedAt === 'string') {
-              updatedAt = Timestamp.fromDate(new Date(updatedAt));
+            if (createdAt && !(createdAt instanceof Timestamp)) { // Check if it exists and is not already a Timestamp
+              if (typeof createdAt === 'string') {
+                createdAt = Timestamp.fromDate(new Date(createdAt));
+              } else if (createdAt.seconds && typeof createdAt.seconds === 'number' && createdAt.nanoseconds && typeof createdAt.nanoseconds === 'number') {
+                // It's a Firestore-like timestamp object from JS, convert to SDK Timestamp
+                createdAt = new Timestamp(createdAt.seconds, createdAt.nanoseconds);
+              } else {
+                // Fallback or error for unknown format
+                console.warn("Unsupported createdAt format, using current date as fallback:", createdAt);
+                createdAt = Timestamp.now(); 
+              }
+            } else if (!createdAt) {
+                 createdAt = Timestamp.now(); // Should not happen for new data
             }
 
-            setContract({ 
-              id: contractSnap.id, 
+
+            let updatedAt = data.updatedAt;
+            if (updatedAt && !(updatedAt instanceof Timestamp)) { // Check if it exists and is not already a Timestamp
+               if (typeof updatedAt === 'string') {
+                updatedAt = Timestamp.fromDate(new Date(updatedAt));
+              } else if (updatedAt.seconds && typeof updatedAt.seconds === 'number' && updatedAt.nanoseconds && typeof updatedAt.nanoseconds === 'number') {
+                updatedAt = new Timestamp(updatedAt.seconds, updatedAt.nanoseconds);
+              } else {
+                console.warn("Unsupported updatedAt format:", updatedAt);
+                updatedAt = undefined; // Or handle as needed
+              }
+            } // If updatedAt is undefined or already a Timestamp, it's fine
+
+            setContract({
+              id: contractSnap.id,
               ...data,
-              createdAt: createdAt,
-              updatedAt: updatedAt,
+              createdAt: createdAt, // Ensured to be a Timestamp
+              updatedAt: updatedAt, // Ensured to be a Timestamp or undefined
             } as Contract);
           } else {
             setContract(null);
@@ -119,10 +139,10 @@ export default function ContractDetailPage() {
   }
   
   const formattedDueDate = contract.dueDate ? new Date(contract.dueDate + 'T00:00:00').toLocaleDateString() : 'N/A';
-  // Format createdAt from Timestamp
-  const formattedCreatedAt = contract.createdAt instanceof Timestamp 
-    ? contract.createdAt.toDate().toLocaleDateString() 
-    : (contract.createdAt ? new Date(contract.createdAt as any).toLocaleDateString() : 'N/A'); // Fallback for non-Timestamp
+  
+  const formattedCreatedAt = contract.createdAt instanceof Timestamp
+    ? contract.createdAt.toDate().toLocaleDateString()
+    : 'N/A';
 
 
   return (
