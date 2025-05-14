@@ -12,9 +12,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ContractStatusBadge } from '@/components/contracts/contract-status-badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/hooks/use-auth';
-import { db, doc, getDoc, Timestamp } from '@/lib/firebase';
+import { db, doc, getDoc, Timestamp, deleteDoc } from '@/lib/firebase';
+import { storage } from '@/lib/firebase'; // Import storage
+import { ref as storageFileRef, deleteObject } from 'firebase/storage'; // Import storage functions
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 function DetailItem({ icon: Icon, label, value, valueClassName }: { icon: React.ElementType, label: string, value: React.ReactNode, valueClassName?: string }) {
   return (
@@ -36,6 +49,8 @@ export default function ContractDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -48,39 +63,38 @@ export default function ContractDetailPage() {
             const data = contractSnap.data();
             
             let createdAt = data.createdAt;
-            if (createdAt && !(createdAt instanceof Timestamp)) { // Check if it exists and is not already a Timestamp
+            if (createdAt && !(createdAt instanceof Timestamp)) {
               if (typeof createdAt === 'string') {
                 createdAt = Timestamp.fromDate(new Date(createdAt));
               } else if (createdAt.seconds && typeof createdAt.seconds === 'number' && createdAt.nanoseconds && typeof createdAt.nanoseconds === 'number') {
-                // It's a Firestore-like timestamp object from JS, convert to SDK Timestamp
                 createdAt = new Timestamp(createdAt.seconds, createdAt.nanoseconds);
               } else {
-                // Fallback or error for unknown format
                 console.warn("Unsupported createdAt format, using current date as fallback:", createdAt);
                 createdAt = Timestamp.now(); 
               }
             } else if (!createdAt) {
-                 createdAt = Timestamp.now(); // Should not happen for new data
+                 createdAt = Timestamp.now();
             }
 
-
             let updatedAt = data.updatedAt;
-            if (updatedAt && !(updatedAt instanceof Timestamp)) { // Check if it exists and is not already a Timestamp
+            if (updatedAt && !(updatedAt instanceof Timestamp)) {
                if (typeof updatedAt === 'string') {
                 updatedAt = Timestamp.fromDate(new Date(updatedAt));
               } else if (updatedAt.seconds && typeof updatedAt.seconds === 'number' && updatedAt.nanoseconds && typeof updatedAt.nanoseconds === 'number') {
                 updatedAt = new Timestamp(updatedAt.seconds, updatedAt.nanoseconds);
               } else {
-                console.warn("Unsupported updatedAt format:", updatedAt);
-                updatedAt = undefined; // Or handle as needed
+                console.warn("Unsupported updatedAt format, using current date as fallback:", updatedAt);
+                updatedAt = Timestamp.now(); 
               }
-            } // If updatedAt is undefined or already a Timestamp, it's fine
+            } else if (!updatedAt) {
+                updatedAt = Timestamp.now();
+            }
 
             setContract({
               id: contractSnap.id,
               ...data,
-              createdAt: createdAt, // Ensured to be a Timestamp
-              updatedAt: updatedAt, // Ensured to be a Timestamp or undefined
+              createdAt: createdAt,
+              updatedAt: updatedAt,
             } as Contract);
           } else {
             setContract(null);
@@ -103,6 +117,44 @@ export default function ContractDetailPage() {
     }
   }, [id, user, authLoading, router, toast]);
 
+  const handleDeleteContract = async () => {
+    if (!contract) return;
+    setIsDeleting(true);
+    try {
+      // Delete file from Firebase Storage if fileUrl exists
+      if (contract.fileUrl) {
+        try {
+          // Firebase Storage URLs are typically in the format:
+          // https://firebasestorage.googleapis.com/v0/b/YOUR_PROJECT_ID.appspot.com/o/PATH_TO_FILE?alt=media&token=TOKEN
+          // We need to extract the PATH_TO_FILE part for deleteObject.
+          // A more robust way is to store the path separately, but for now we parse the URL.
+          // Or, simpler, if the fileUrl is the download URL, Firebase SDK's ref(storage, fileUrl) can often resolve it.
+          const fileRef = storageFileRef(storage, contract.fileUrl);
+          await deleteObject(fileRef);
+          toast({ title: "File Deleted", description: "Associated file removed from storage." });
+        } catch (storageError: any) {
+          // Log storage error but don't block Firestore deletion if file deletion fails (e.g., file already deleted or bad URL)
+          console.error("Error deleting file from storage:", storageError);
+          if (storageError.code !== 'storage/object-not-found') { // Don't show error if file simply wasn't there
+             toast({ title: "Storage Error", description: "Could not delete associated file. It might have been already removed or the URL is invalid.", variant: "destructive" });
+          }
+        }
+      }
+
+      // Delete document from Firestore
+      const contractDocRef = doc(db, 'contracts', contract.id);
+      await deleteDoc(contractDocRef);
+
+      toast({ title: "Contract Deleted", description: `${contract.brand} contract has been successfully deleted.` });
+      router.push('/contracts');
+    } catch (error) {
+      console.error("Error deleting contract:", error);
+      toast({ title: "Deletion Failed", description: "Could not delete the contract. Please try again.", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
+    }
+  };
 
   if (authLoading || isLoading) {
     return (
@@ -144,7 +196,6 @@ export default function ContractDetailPage() {
     ? contract.createdAt.toDate().toLocaleDateString()
     : 'N/A';
 
-
   return (
     <>
       <PageHeader
@@ -158,7 +209,30 @@ export default function ContractDetailPage() {
               </Link>
             </Button>
             <Button variant="outline" disabled><Edit3 className="mr-2 h-4 w-4" /> Edit</Button>
-            <Button variant="destructive" disabled><Trash2 className="mr-2 h-4 w-4" /> Delete</Button>
+            <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" disabled={isDeleting}>
+                  {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the contract
+                    for "{contract.brand} - {contract.fileName || contract.id}" and remove its associated file from storage (if any).
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDeleteContract} disabled={isDeleting} className="bg-destructive hover:bg-destructive/90">
+                    {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Yes, delete contract
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         }
       />
@@ -180,6 +254,17 @@ export default function ContractDetailPage() {
               <DetailItem icon={FileText} label="Contract Type" value={<span className="capitalize">{contract.contractType}</span>} />
               <DetailItem icon={Info} label="File Name" value={contract.fileName || "N/A"} />
                <DetailItem icon={CalendarDays} label="Created At" value={formattedCreatedAt} />
+               {contract.fileUrl && (
+                <DetailItem 
+                  icon={FileText} 
+                  label="Contract File" 
+                  value={
+                    <a href={contract.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">
+                      View/Download File
+                    </a>
+                  } 
+                />
+              )}
             </CardContent>
           </Card>
 
@@ -242,3 +327,5 @@ export default function ContractDetailPage() {
     </>
   );
 }
+
+    
