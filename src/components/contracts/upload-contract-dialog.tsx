@@ -100,7 +100,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
       toast({ title: "Authentication Error", description: "You must be logged in to save a contract.", variant: "destructive" });
       return;
     }
-    if (!parsedDetails && !selectedFile) { // Allow save if either details are parsed or a file is selected
+    if (!parsedDetails && !selectedFile) { 
       toast({ title: "Cannot Save", description: "No contract details parsed or file selected.", variant: "destructive" });
       return;
     }
@@ -115,7 +115,6 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         fileUrlToSave = await getDownloadURL(uploadResult.ref);
       }
 
-      // Ensure parsedDetails exists or provide defaults
       const currentParsedDetails = parsedDetails || {
         brand: "Unknown Brand",
         amount: 0,
@@ -125,8 +124,11 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
       
       const currentSummary = summary || { summary: "No summary available." };
 
+      // Clean extractedTerms to remove any undefined properties before saving to Firestore
+      const cleanedExtractedTerms = currentParsedDetails.extractedTerms 
+        ? JSON.parse(JSON.stringify(currentParsedDetails.extractedTerms)) 
+        : {};
 
-      // Data for Firestore document
       const contractDataForFirestore: Omit<Contract, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any, updatedAt: any } = {
         userId: user.uid,
         brand: currentParsedDetails.brand || "Unknown Brand",
@@ -136,9 +138,9 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         contractType: 'other' as Contract['contractType'],
         contractText: contractText, 
         fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
-        fileUrl: fileUrlToSave, // Use null if no file
+        fileUrl: fileUrlToSave || null, 
         summary: currentSummary.summary,
-        extractedTerms: currentParsedDetails.extractedTerms || {},
+        extractedTerms: cleanedExtractedTerms,
         createdAt: firebaseServerTimestamp(),
         updatedAt: firebaseServerTimestamp(),
       };
@@ -155,9 +157,9 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         contractType: 'other',
         contractText: contractText,
         fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
-        fileUrl: fileUrlToSave, // Use null if no file
+        fileUrl: fileUrlToSave || null,
         summary: currentSummary.summary,
-        extractedTerms: currentParsedDetails.extractedTerms || {},
+        extractedTerms: cleanedExtractedTerms,
         createdAt: Timestamp.now(), 
         updatedAt: Timestamp.now(), 
       };
@@ -301,4 +303,3 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     </Dialog>
   );
 }
-
