@@ -16,6 +16,8 @@ interface AuthContextType {
   user: UserProfile | null;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  loginWithEmailAndPassword: (email: string, password: string) => Promise<void>;
+  signupWithEmailAndPassword: (email: string, password: string) => Promise<void>;
   isLoading: boolean;
 }
 
@@ -66,10 +68,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithEmailAndPassword = async (email: string, password: string) => {
+    try {
+      setIsLoading(true); // Set loading before attempting sign-in
+      // Assuming signInWithEmailAndPassword is imported from firebase.ts
+      // @ts-ignore // Temporarily ignore until the import is confirmed
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      console.error("Error signing in with email and password:", error);
+      setIsLoading(false); // Clear loading on error
+    }
+  };
+
+  const signupWithEmailAndPassword = async (email: string, password: string) => {
+    try {
+      setIsLoading(true); // Set loading before attempting signup
+      // Assuming createUserWithEmailAndPassword is imported from firebase.ts
+      // @ts-ignore // Temporarily ignore until the import is confirmed
+      await createUserWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will handle setting the user and clearing loading state
+    } catch (error) {
+      console.error("Error signing up with email and password:", error);
+      setIsLoading(false); // Clear loading on error
+    }
+  };
+
   const isAuthenticated = !!user;
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, loginWithGoogle, logout, isLoading }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, loginWithGoogle, logout, loginWithEmailAndPassword, signupWithEmailAndPassword, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
