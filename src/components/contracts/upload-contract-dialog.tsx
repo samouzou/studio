@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input"; // File input uncommented
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -23,7 +23,7 @@ import type { Contract } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
-import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp } from '@/lib/firebase'; // Firestore
+import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp, Timestamp } from '@/lib/firebase'; // Firestore
 
 interface UploadContractDialogProps {
   onContractAdded: (newContract: Contract) => void;
@@ -32,7 +32,7 @@ interface UploadContractDialogProps {
 export function UploadContractDialog({ onContractAdded }: UploadContractDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [contractText, setContractText] = useState("");
-  const [fileName, setFileName] = useState(""); // Keep for manual entry or future file handling
+  const [fileName, setFileName] = useState("");
   const [isParsing, startParseTransition] = useTransition();
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
@@ -42,7 +42,6 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
   const [summary, setSummary] = useState<SummarizeContractTermsOutput | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
-  // Reset states when dialog closes
   useEffect(() => {
     if (!isOpen) {
       setContractText("");
@@ -53,14 +52,6 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
       setIsSaving(false);
     }
   }, [isOpen]);
-
-  // const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-  //   const file = event.target.files?.[0];
-  //   if (file) {
-  //     setFileName(file.name);
-  //     toast({ title: "File selected", description: `${file.name} selected. Please paste contract text below, or future versions will read file content.` });
-  //   }
-  // };
 
   const handleParseContract = async () => {
     if (!contractText.trim()) {
@@ -113,26 +104,46 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
 
     setIsSaving(true);
     try {
-      const newContractData: Omit<Contract, 'id'> = {
+      // Data for Firestore document
+      const contractDataForFirestore = {
+        userId: user.uid,
+        brand: parsedDetails.brand || "Unknown Brand",
+        amount: parsedDetails.amount || 0,
+        dueDate: parsedDetails.dueDate || new Date().toISOString().split('T')[0], // Stays as YYYY-MM-DD string
+        status: 'pending' as Contract['status'],
+        contractType: 'other' as Contract['contractType'],
+        contractText: contractText,
+        fileName: fileName || "Pasted Contract",
+        summary: summary?.summary || "No summary available.",
+        extractedTerms: parsedDetails.extractedTerms || {},
+        createdAt: firebaseServerTimestamp(), // Use server timestamp
+        updatedAt: firebaseServerTimestamp(), // Use server timestamp
+      };
+
+      const docRef = await addDoc(collection(db, 'contracts'), contractDataForFirestore);
+      
+      // Create a contract object for local state update with client-side timestamps
+      // This ensures the UI can render it immediately without fetching again.
+      // The actual Firestore document will have the server-generated timestamp.
+      const contractForLocalState: Contract = {
+        id: docRef.id,
         userId: user.uid,
         brand: parsedDetails.brand || "Unknown Brand",
         amount: parsedDetails.amount || 0,
         dueDate: parsedDetails.dueDate || new Date().toISOString().split('T')[0],
         status: 'pending',
-        contractType: 'other', // Default type, can be enhanced with a selector
+        contractType: 'other',
         contractText: contractText,
-        fileName: fileName || "Pasted Contract", // Use custom filename if available
+        fileName: fileName || "Pasted Contract",
         summary: summary?.summary || "No summary available.",
         extractedTerms: parsedDetails.extractedTerms || {},
-        createdAt: new Date().toISOString(), // Client-side timestamp
-        updatedAt: new Date().toISOString(), // Client-side timestamp
-        // For server-side timestamp: createdAt: firebaseServerTimestamp(),
+        createdAt: Timestamp.now(), // Client-side Timestamp for immediate UI update
+        updatedAt: Timestamp.now(), // Client-side Timestamp for immediate UI update
       };
 
-      const docRef = await addDoc(collection(db, 'contracts'), newContractData);
-      onContractAdded({ ...newContractData, id: docRef.id }); // Callback with the full contract including Firestore ID
+      onContractAdded(contractForLocalState);
 
-      toast({ title: "Contract Saved", description: `${newContractData.brand} contract added successfully.` });
+      toast({ title: "Contract Saved", description: `${contractForLocalState.brand} contract added successfully.` });
       setIsOpen(false);
     } catch (error) {
       console.error("Error saving contract:", error);
@@ -163,7 +174,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
             Paste the contract text below to parse its terms using AI. File upload coming soon.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="max-h-[calc(80vh-250px)]"> {/* Adjusted height */}
+        <ScrollArea className="max-h-[calc(80vh-250px)]">
         <div className="grid gap-6 p-1 pr-4">
            <div>
             <Label htmlFor="fileName">File Name (Optional)</Label>
@@ -183,7 +194,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
               value={contractText}
               onChange={(e) => setContractText(e.target.value)}
               placeholder="Paste the full text of your contract here..."
-              rows={8} // Reduced rows slightly
+              rows={8}
               className="mt-1"
             />
           </div>
@@ -208,7 +219,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
           )}
 
           {(parsedDetails || summary) && !parseError && (
-            <div className="mt-2 space-y-4"> {/* Reduced mt */}
+            <div className="mt-2 space-y-4">
               <h3 className="text-lg font-semibold text-foreground">AI Analysis Results</h3>
               {parsedDetails && (
                 <Card>
@@ -218,7 +229,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
                   <CardContent className="space-y-2 text-sm">
                     <p><strong>Brand:</strong> {parsedDetails.brand || 'N/A'}</p>
                     <p><strong>Amount:</strong> {parsedDetails.amount ? `$${parsedDetails.amount.toLocaleString()}` : 'N/A'}</p>
-                    <p><strong>Due Date:</strong> {parsedDetails.dueDate ? new Date(parsedDetails.dueDate + 'T00:00:00').toLocaleDateString() : 'N/A'}</p> {/* Ensure correct date parsing */}
+                    <p><strong>Due Date:</strong> {parsedDetails.dueDate ? new Date(parsedDetails.dueDate + 'T00:00:00').toLocaleDateString() : 'N/A'}</p>
                     {parsedDetails.extractedTerms?.paymentMethod && <p><strong>Payment Method:</strong> {parsedDetails.extractedTerms.paymentMethod}</p>}
                     {parsedDetails.extractedTerms?.deliverables && parsedDetails.extractedTerms.deliverables.length > 0 && (
                         <p><strong>Deliverables:</strong> {parsedDetails.extractedTerms.deliverables.join(', ')}</p>

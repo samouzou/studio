@@ -1,3 +1,6 @@
+
+import type { Timestamp } from 'firebase/firestore';
+
 export interface Contract {
   id: string; // Document ID from Firestore
   userId: string; // Firebase Auth User ID
@@ -16,8 +19,8 @@ export interface Contract {
   summary?: string;
   contractText?: string;
   fileName?: string;
-  createdAt: string; // ISO Date string (consider Firebase Timestamp for server-side generation)
-  updatedAt?: string; // ISO Date string (optional, can be set on updates)
+  createdAt: Timestamp; // Changed from string
+  updatedAt?: Timestamp; // Changed from string
 }
 
 export interface EarningsDataPoint {

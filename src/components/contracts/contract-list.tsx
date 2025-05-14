@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -13,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
+import { Timestamp } from 'firebase/firestore'; // Import Timestamp
 
 interface ContractListProps {
   contracts: Contract[];
@@ -22,6 +24,21 @@ export function ContractList({ contracts }: ContractListProps) {
   if (contracts.length === 0) {
     return <p className="text-muted-foreground mt-4">No contracts found. Add your first contract to get started!</p>;
   }
+
+  const formatDate = (dateInput: string | Timestamp | undefined): string => {
+    if (!dateInput) return 'N/A';
+    if (dateInput instanceof Timestamp) {
+      return dateInput.toDate().toLocaleDateString();
+    }
+    // Assuming string is YYYY-MM-DD for dueDate
+    // For createdAt string (from older data or client-side before proper conversion), try parsing
+    try {
+      return new Date(dateInput + 'T00:00:00').toLocaleDateString(); // Ensure UTC for YYYY-MM-DD
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  };
+
 
   return (
     <div className="overflow-hidden rounded-lg border shadow-sm bg-card">
@@ -34,6 +51,7 @@ export function ContractList({ contracts }: ContractListProps) {
             <TableHead className="hidden sm:table-cell">Due Date</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="hidden lg:table-cell">File Name</TableHead>
+            {/* <TableHead className="hidden lg:table-cell">Created At</TableHead> */}
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -43,13 +61,14 @@ export function ContractList({ contracts }: ContractListProps) {
               <TableCell className="font-medium">{contract.brand}</TableCell>
               <TableCell className="hidden md:table-cell capitalize">{contract.contractType}</TableCell>
               <TableCell className="text-right">${contract.amount.toLocaleString()}</TableCell>
-              <TableCell className="hidden sm:table-cell">{new Date(contract.dueDate).toLocaleDateString()}</TableCell>
+              <TableCell className="hidden sm:table-cell">{formatDate(contract.dueDate)}</TableCell>
               <TableCell>
                 <ContractStatusBadge status={contract.status} />
               </TableCell>
               <TableCell className="hidden lg:table-cell text-sm text-muted-foreground truncate max-w-[150px]">
                 {contract.fileName || 'N/A'}
               </TableCell>
+              {/* <TableCell className="hidden lg:table-cell">{formatDate(contract.createdAt)}</TableCell> */}
               <TableCell className="text-right">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -64,10 +83,10 @@ export function ContractList({ contracts }: ContractListProps) {
                         <Eye className="mr-2 h-4 w-4" /> View Details
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem>
+                    <DropdownMenuItem disabled>
                       <Edit3 className="mr-2 h-4 w-4" /> Edit
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                    <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled>
                       <Trash2 className="mr-2 h-4 w-4" /> Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>

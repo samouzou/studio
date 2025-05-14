@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useParams, useRouter } from 'next/navigation';
@@ -9,11 +10,11 @@ import Link from 'next/link';
 import type { Contract } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ContractStatusBadge } from '@/components/contracts/contract-status-badge';
-// import { Separator } from '@/components/ui/separator'; // Not used
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/hooks/use-auth';
-import { db, doc, getDoc } from '@/lib/firebase';
+import { db, doc, getDoc, Timestamp } from '@/lib/firebase'; // Added Timestamp
 import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from "@/hooks/use-toast"; // Corrected import
 
 function DetailItem({ icon: Icon, label, value, valueClassName }: { icon: React.ElementType, label: string, value: React.ReactNode, valueClassName?: string }) {
   return (
@@ -34,6 +35,7 @@ export default function ContractDetailPage() {
   const [contract, setContract] = useState<Contract | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { user, isLoading: authLoading } = useAuth();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -43,31 +45,43 @@ export default function ContractDetailPage() {
           const contractDocRef = doc(db, 'contracts', id as string);
           const contractSnap = await getDoc(contractDocRef);
           if (contractSnap.exists() && contractSnap.data().userId === user.uid) {
-            setContract({ id: contractSnap.id, ...contractSnap.data() } as Contract);
+            const data = contractSnap.data();
+            // Ensure createdAt and updatedAt are Timestamps, convert if they are strings (e.g. from older data)
+            let createdAt = data.createdAt;
+            if (typeof createdAt === 'string') {
+              createdAt = Timestamp.fromDate(new Date(createdAt));
+            }
+            let updatedAt = data.updatedAt;
+            if (typeof updatedAt === 'string') {
+              updatedAt = Timestamp.fromDate(new Date(updatedAt));
+            }
+
+            setContract({ 
+              id: contractSnap.id, 
+              ...data,
+              createdAt: createdAt,
+              updatedAt: updatedAt,
+            } as Contract);
           } else {
-            setContract(null); // Not found or not authorized
+            setContract(null);
             toast({ title: "Error", description: "Contract not found or you don't have permission to view it.", variant: "destructive" });
-            router.push('/contracts'); // Redirect if not found/authorized
+            router.push('/contracts');
           }
         } catch (error) {
           console.error("Error fetching contract:", error);
           setContract(null);
-          // Consider showing a toast message here
+          toast({ title: "Fetch Error", description: "Could not load contract details.", variant: "destructive" });
         } finally {
           setIsLoading(false);
         }
       };
       fetchContract();
     } else if (!authLoading && !user) {
-      // Not logged in, redirect or show message
       router.push('/login');
     } else if (!id) {
-        setIsLoading(false); // No ID, nothing to load
+        setIsLoading(false);
     }
-  }, [id, user, authLoading, router]);
-
-  // Added a toast import for error messages
-  const { toast } = (typeof window !== 'undefined' && require('@/hooks/use-toast')) || { toast: () => {} };
+  }, [id, user, authLoading, router, toast]);
 
 
   if (authLoading || isLoading) {
@@ -105,7 +119,10 @@ export default function ContractDetailPage() {
   }
   
   const formattedDueDate = contract.dueDate ? new Date(contract.dueDate + 'T00:00:00').toLocaleDateString() : 'N/A';
-  const formattedCreatedAt = contract.createdAt ? new Date(contract.createdAt).toLocaleDateString() : 'N/A';
+  // Format createdAt from Timestamp
+  const formattedCreatedAt = contract.createdAt instanceof Timestamp 
+    ? contract.createdAt.toDate().toLocaleDateString() 
+    : (contract.createdAt ? new Date(contract.createdAt as any).toLocaleDateString() : 'N/A'); // Fallback for non-Timestamp
 
 
   return (
