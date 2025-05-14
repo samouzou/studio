@@ -1,19 +1,19 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { SignUpForm } from "@/components/auth/signup-form"; // Make sure this path is correct
+import { SignUpForm } from "@/components/auth/signup-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react"; // Removed Scale from here
+import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import Link from 'next/link';
 
-type FormType = 'googleLogin' | 'emailSignup' | 'emailLogin';
 export default function LoginPage() {
-  const { loginWithGoogle, loginWithEmailAndPassword, isAuthenticated, isLoading } = useAuth();
+  const { loginWithGoogle, loginWithEmailAndPassword, isAuthenticated, isLoading, signupWithEmailAndPassword } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,18 +30,25 @@ export default function LoginPage() {
     // Navigation is handled by useEffect or AuthGuard
   };
 
-  const handleEmailLogin = async () => {
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     await loginWithEmailAndPassword(email, password);
     // Navigation is handled by useEffect or AuthGuard
   };
 
+  // Removed the SignUpForm component from here to simplify and use the dedicated SignUpForm component
+  // const handleSignUp = async (e: React.FormEvent) => {
+  // e.preventDefault();
+  // await signupWithEmailAndPassword(email, password);
+  // Navigation is handled by useEffect or AuthGuard
+  // };
+
+
   if (isLoading || (!isLoading && isAuthenticated)) {
-     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-secondary p-4">
+     return <div className="flex min-h-screen flex-col items-center justify-center bg-secondary p-4">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <p className="mt-4 text-muted-foreground">Loading...</p>
-      </div>
-    );
+      </div>;
   }
 
 
@@ -60,23 +67,18 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            {/* Conditional rendering based on isSignUp state */}
             {isSignUp ? (
               <>
-                {/* Sign Up Form */}
                 <SignUpForm />
                 <p className="px-8 text-center text-sm text-muted-foreground">
                   Already have an account?{" "}
-                  {/* Toggle to combined Login view */}
                   <Button variant="link" onClick={() => setIsSignUp(false)} className="p-0 h-auto">
                     Sign in
                   </Button>
                 </p>
               </>
             ) : (
-              {/* Combined Login View (Google and Email/Password) */}
               <>
-                {/* Google Login Button */}
                 <p className="text-center text-muted-foreground">
                   Access your dashboard by signing in with your Google account.
                 </p>
@@ -84,21 +86,18 @@ export default function LoginPage() {
                   {isLoading ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
-                    // Google Icon SVG
                     <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512"><path fill="currentColor" d="M488 261.8C488 403.3 381.5 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path></svg>
                   )}
                   Sign in with Google
                 </Button>
 
-                {/* Separator */}
                 <div className="flex items-center my-4">
-                  <div className="flex-grow border-t border-gray-300"></div>
-                  <span className="flex-shrink mx-4 text-gray-500 text-sm">OR</span>
-                  <div className="flex-grow border-t border-gray-300"></div>
+                  <div className="flex-grow border-t border-border"></div>
+                  <span className="flex-shrink mx-4 text-muted-foreground text-sm">OR</span>
+                  <div className="flex-grow border-t border-border"></div>
                 </div>
 
-                {/* Email/Password Login Form */}
-                <div className="space-y-4">
+                <form onSubmit={handleEmailLogin} className="space-y-4">
                    <p className="text-center text-muted-foreground">
                     Sign in with your email and password.
                   </p>
@@ -110,16 +109,15 @@ export default function LoginPage() {
                     <Label htmlFor="password-login">Password</Label>
                     <Input id="password-login" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                   </div>
-                  <Button onClick={handleEmailLogin} className="w-full" disabled={isLoading}>
+                  <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
                       "Sign In with Email"
                     )}
                   </Button>
-                </div>
+                </form>
 
-                {/* Toggle to Sign Up */}
                  <p className="px-8 text-center text-sm text-muted-foreground">
                   Don't have an account?{" "}
                   <Button variant="link" onClick={() => setIsSignUp(true)} className="p-0 h-auto">
