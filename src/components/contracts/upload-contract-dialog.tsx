@@ -27,10 +27,10 @@ import { storage } from '@/lib/firebase'; // Storage instance
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // Firebase Storage functions
 
 interface UploadContractDialogProps {
-  onContractAdded: (newContract: Contract) => void;
+  // onContractAdded prop removed
 }
 
-export function UploadContractDialog({ onContractAdded }: UploadContractDialogProps) {
+export function UploadContractDialog({ /* onContractAdded removed */ }: UploadContractDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [contractText, setContractText] = useState("");
   const [fileName, setFileName] = useState("");
@@ -145,28 +145,12 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         updatedAt: firebaseServerTimestamp(),
       };
 
-      const docRef = await addDoc(collection(db, 'contracts'), contractDataForFirestore);
+      await addDoc(collection(db, 'contracts'), contractDataForFirestore);
       
-      const contractForLocalState: Contract = {
-        id: docRef.id,
-        userId: user.uid,
-        brand: currentParsedDetails.brand || "Unknown Brand",
-        amount: currentParsedDetails.amount || 0,
-        dueDate: currentParsedDetails.dueDate || new Date().toISOString().split('T')[0],
-        status: 'pending',
-        contractType: 'other',
-        contractText: contractText,
-        fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
-        fileUrl: fileUrlToSave || null,
-        summary: currentSummary.summary,
-        extractedTerms: cleanedExtractedTerms,
-        createdAt: Timestamp.now(), 
-        updatedAt: Timestamp.now(), 
-      };
+      // contractForLocalState and onContractAdded call removed
+      // The onSnapshot listener in ContractsPage will handle updating the UI.
 
-      onContractAdded(contractForLocalState);
-
-      toast({ title: "Contract Saved", description: `${contractForLocalState.brand} contract added successfully.` });
+      toast({ title: "Contract Saved", description: `${contractDataForFirestore.brand} contract added successfully.` });
       setIsOpen(false);
     } catch (error) {
       console.error("Error saving contract:", error);
