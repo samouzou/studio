@@ -2,13 +2,13 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAuth } from "@/hooks/use-auth"; // Updated import
+import { useAuth } from "@/hooks/use-auth"; 
 import { useRouter } from "next/navigation";
 import { Scale, Loader2 } from "lucide-react"; 
 import { useEffect } from "react";
 
 export default function LoginPage() {
-  const { loginWithGoogle, isAuthenticated, isLoading } = useAuth(); // Updated hook usage
+  const { loginWithGoogle, isAuthenticated, isLoading } = useAuth(); 
   const router = useRouter();
 
   useEffect(() => {
@@ -37,9 +37,12 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
           <div className="mb-4 flex justify-center">
-            <Scale className="h-12 w-12 text-primary" />
+            {/* Using an inline SVG for the Verza 'V' logo style */}
+            <svg width="48" height="48" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-primary">
+             <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fontFamily="Space Grotesk, sans-serif" fontSize="38" fontWeight="bold" fill="currentColor">V</text>
+            </svg>
           </div>
-          <CardTitle className="text-3xl font-bold">SoloLedger Lite</CardTitle>
+          <CardTitle className="text-3xl font-bold">Verza</CardTitle>
           <CardDescription>Smart contract management for creators.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -47,7 +50,7 @@ export default function LoginPage() {
             <p className="text-center text-muted-foreground">
               Access your dashboard by signing in with your Google account.
             </p>
-            <Button onClick={handleLogin} className="w-full" size="lg" disabled={isLoading}>
+            <Button onClick={handleLogin} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" size="lg" disabled={isLoading}>
               {isLoading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -57,13 +60,13 @@ export default function LoginPage() {
             </Button>
             <p className="px-8 text-center text-sm text-muted-foreground">
               By continuing, you agree to our{" "}
-              <a href="#" className="underline underline-offset-4 hover:text-primary">
+              <Link href="#" className="underline underline-offset-4 hover:text-primary">
                 Terms of Service
-              </a>{" "}
+              </Link>{" "}
               and{" "}
-              <a href="#" className="underline underline-offset-4 hover:text-primary">
+              <Link href="#" className="underline underline-offset-4 hover:text-primary">
                 Privacy Policy
-              </a>
+              </Link>
               .
             </p>
           </div>
@@ -72,3 +75,6 @@ export default function LoginPage() {
     </div>
   );
 }
+
+// Added Link import
+import Link from 'next/link';
