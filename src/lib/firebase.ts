@@ -6,7 +6,7 @@ import {
   signOut, 
   onAuthStateChanged, 
   createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, // Added import
+  signInWithEmailAndPassword,
   type User as FirebaseUser 
 } from 'firebase/auth';
 import { 
@@ -25,8 +25,8 @@ import {
   deleteDoc, 
   updateDoc,
   writeBatch
-} from 'firebase/firestore'; // Uncomment if you plan to use Firebase Storage
-import { getStorage } from 'firebase/storage'; // Uncomment if you plan to use Firebase Storage
+} from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfigValues = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -68,13 +68,14 @@ export {
   app, 
   auth, 
   db, 
+  storage, // Added storage to exports
   googleAuthProvider, 
   // Auth methods
   signInWithPopup,
   signOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
-  signInWithEmailAndPassword, // Added to exports
+  signInWithEmailAndPassword,
   type FirebaseUser,
   // Firestore methods
   collection, 

@@ -22,7 +22,8 @@ import type { Contract } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
-import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp, Timestamp, storage } from '@/lib/firebase'; // Firestore & Storage
+import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp, Timestamp } from '@/lib/firebase'; // Firestore
+import { storage } from '@/lib/firebase'; // Storage instance
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // Firebase Storage functions
 
 interface UploadContractDialogProps {
@@ -99,8 +100,8 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
       toast({ title: "Authentication Error", description: "You must be logged in to save a contract.", variant: "destructive" });
       return;
     }
-    if (!parsedDetails) {
-      toast({ title: "Cannot Save", description: "No contract details parsed yet.", variant: "destructive" });
+    if (!parsedDetails && !selectedFile) { // Allow save if either details are parsed or a file is selected
+      toast({ title: "Cannot Save", description: "No contract details parsed or file selected.", variant: "destructive" });
       return;
     }
 
@@ -114,19 +115,30 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         fileUrl = await getDownloadURL(uploadResult.ref);
       }
 
+      // Ensure parsedDetails exists or provide defaults
+      const currentParsedDetails = parsedDetails || {
+        brand: "Unknown Brand",
+        amount: 0,
+        dueDate: new Date().toISOString().split('T')[0],
+        extractedTerms: {}
+      };
+      
+      const currentSummary = summary || { summary: "No summary available." };
+
+
       // Data for Firestore document
       const contractDataForFirestore: Omit<Contract, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any, updatedAt: any } = {
         userId: user.uid,
-        brand: parsedDetails.brand || "Unknown Brand",
-        amount: parsedDetails.amount || 0,
-        dueDate: parsedDetails.dueDate || new Date().toISOString().split('T')[0],
+        brand: currentParsedDetails.brand || "Unknown Brand",
+        amount: currentParsedDetails.amount || 0,
+        dueDate: currentParsedDetails.dueDate || new Date().toISOString().split('T')[0],
         status: 'pending' as Contract['status'],
         contractType: 'other' as Contract['contractType'],
-        contractText: contractText,
-        fileName: fileName || (selectedFile ? selectedFile.name : "Pasted Contract"),
+        contractText: contractText, // Save pasted text even if parsing fails or not initiated
+        fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
         fileUrl: fileUrl || undefined,
-        summary: summary?.summary || "No summary available.",
-        extractedTerms: parsedDetails.extractedTerms || {},
+        summary: currentSummary.summary,
+        extractedTerms: currentParsedDetails.extractedTerms || {},
         createdAt: firebaseServerTimestamp(),
         updatedAt: firebaseServerTimestamp(),
       };
@@ -136,18 +148,18 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
       const contractForLocalState: Contract = {
         id: docRef.id,
         userId: user.uid,
-        brand: parsedDetails.brand || "Unknown Brand",
-        amount: parsedDetails.amount || 0,
-        dueDate: parsedDetails.dueDate || new Date().toISOString().split('T')[0],
+        brand: currentParsedDetails.brand || "Unknown Brand",
+        amount: currentParsedDetails.amount || 0,
+        dueDate: currentParsedDetails.dueDate || new Date().toISOString().split('T')[0],
         status: 'pending',
         contractType: 'other',
         contractText: contractText,
-        fileName: fileName || (selectedFile ? selectedFile.name : "Pasted Contract"),
+        fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
         fileUrl: fileUrl || undefined,
-        summary: summary?.summary || "No summary available.",
-        extractedTerms: parsedDetails.extractedTerms || {},
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
+        summary: currentSummary.summary,
+        extractedTerms: currentParsedDetails.extractedTerms || {},
+        createdAt: Timestamp.now(), // Use client-side Timestamp for immediate UI update
+        updatedAt: Timestamp.now(), // Use client-side Timestamp for immediate UI update
       };
 
       onContractAdded(contractForLocalState);
@@ -291,5 +303,3 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     </Dialog>
   );
 }
-
-    
