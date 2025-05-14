@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -9,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Search, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
-import { db, collection, query, where, getDocs, orderBy as firestoreOrderBy } from '@/lib/firebase';
+import { db, collection, query, where, onSnapshot, orderBy as firestoreOrderBy, Timestamp } from '@/lib/firebase';
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ContractsPage() {
@@ -21,25 +22,35 @@ export default function ContractsPage() {
   useEffect(() => {
     if (user && !authLoading) {
       setIsLoadingContracts(true);
-      const fetchContracts = async () => {
-        try {
-          const contractsCol = collection(db, 'contracts');
-          const q = query(
-            contractsCol,
-            where('userId', '==', user.uid),
-            firestoreOrderBy('createdAt', 'desc')
-          );
-          const contractSnapshot = await getDocs(q);
-          const contractList = contractSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contract));
-          setContracts(contractList);
-        } catch (error) {
-          console.error("Error fetching contracts:", error);
-          // Handle error (e.g., show toast)
-        } finally {
-          setIsLoadingContracts(false);
-        }
-      };
-      fetchContracts();
+      const contractsCol = collection(db, 'contracts');
+      const q = query(
+        contractsCol,
+        where('userId', '==', user.uid),
+        firestoreOrderBy('createdAt', 'desc')
+      );
+
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const contractList = querySnapshot.docs.map(docSnap => {
+          const data = docSnap.data();
+          // Ensure Timestamps are correctly handled. Firestore SDK should return them as Timestamp objects.
+          // If there's any doubt or legacy data, more robust conversion might be needed here.
+          return {
+            id: docSnap.id,
+            ...data,
+            createdAt: data.createdAt as Timestamp, // Assuming it's already a Timestamp
+            updatedAt: data.updatedAt as Timestamp | undefined, // Assuming it's already a Timestamp or undefined
+          } as Contract;
+        });
+        setContracts(contractList);
+        setIsLoadingContracts(false);
+      }, (error) => {
+        console.error("Error fetching contracts with onSnapshot:", error);
+        setContracts([]); // Clear contracts on error
+        setIsLoadingContracts(false);
+        // Optionally, show a toast to the user
+      });
+
+      return () => unsubscribe(); // Cleanup listener on component unmount
     } else if (!authLoading && !user) {
       // Not logged in, or finished auth check and no user
       setContracts([]);
@@ -48,14 +59,15 @@ export default function ContractsPage() {
   }, [user, authLoading]);
 
   const handleContractAdded = (newContract: Contract) => {
-    // Add to the top of the list, assuming it's already sorted by createdAt desc from Firestore or new ones are newest
-    setContracts(prevContracts => [newContract, ...prevContracts]);
+    // Optimistic update: add to the top of the list.
+    // onSnapshot will eventually provide the consistent list from Firestore.
+    setContracts(prevContracts => [newContract, ...prevContracts.filter(c => c.id !== newContract.id)]);
   };
 
   const filteredContracts = contracts.filter(contract =>
-    contract.brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (contract.fileName && contract.fileName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    contract.contractType.toLowerCase().includes(searchTerm.toLowerCase())
+    (contract.brand || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (contract.fileName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (contract.contractType || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const renderContractList = () => {
