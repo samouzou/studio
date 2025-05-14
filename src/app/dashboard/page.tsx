@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -7,7 +8,7 @@ import { AtRiskPayments } from "@/components/dashboard/at-risk-payments";
 import { UpcomingIncomeList } from "@/components/dashboard/upcoming-income";
 import { DashboardFilters } from "@/components/dashboard/dashboard-filters";
 import { SummaryCard } from "@/components/dashboard/summary-card";
-import { DollarSign, FileText, AlertCircle, CalendarCheck, Loader2 } from "lucide-react";
+import { DollarSign, FileText, AlertCircle, CalendarCheck, Loader2, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { db, collection, query, where, getDocs } from '@/lib/firebase';
 import type { Contract, EarningsDataPoint, UpcomingIncome, AtRiskPayment } from "@/types";
@@ -197,3 +198,4 @@ export default function DashboardPage() {
     </>
   );
 }
+

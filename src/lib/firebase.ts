@@ -59,7 +59,7 @@ const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
-const db = getFirestore(app);
+const db = getFirestore(app, );
 const storage = getStorage(app);
 
 const googleAuthProvider = new GoogleAuthProvider();
