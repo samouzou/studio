@@ -12,12 +12,14 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { db, collection, query, where, onSnapshot, orderBy as firestoreOrderBy, Timestamp } from '@/lib/firebase';
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast"; // Added useToast
 
 export default function ContractsPage() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [isLoadingContracts, setIsLoadingContracts] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const { user, isLoading: authLoading } = useAuth();
+  const { toast } = useToast(); // Initialized toast
 
   useEffect(() => {
     if (user && user.uid && !authLoading) {
@@ -32,20 +34,40 @@ export default function ContractsPage() {
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const contractList = querySnapshot.docs.map(docSnap => {
           const data = docSnap.data();
+          
+          let createdAtTimestamp: Timestamp;
+          if (data.createdAt instanceof Timestamp) {
+            createdAtTimestamp = data.createdAt;
+          } else if (data.createdAt && typeof data.createdAt.seconds === 'number' && typeof data.createdAt.nanoseconds === 'number') {
+            createdAtTimestamp = new Timestamp(data.createdAt.seconds, data.createdAt.nanoseconds);
+          } else {
+            // Fallback or error, though orderBy should ensure it exists and is a Timestamp
+            console.warn("Contract createdAt field was not a valid Timestamp, using current time as fallback. Document ID:", docSnap.id);
+            createdAtTimestamp = Timestamp.now(); 
+          }
+
+          let updatedAtTimestamp: Timestamp | undefined = undefined;
+          if (data.updatedAt instanceof Timestamp) {
+            updatedAtTimestamp = data.updatedAt;
+          } else if (data.updatedAt && typeof data.updatedAt.seconds === 'number' && typeof data.updatedAt.nanoseconds === 'number') {
+             updatedAtTimestamp = new Timestamp(data.updatedAt.seconds, data.updatedAt.nanoseconds);
+          }
+          // If data.updatedAt is undefined, updatedAtTimestamp remains undefined, matching Contract type.
+
           return {
             id: docSnap.id,
             ...data,
-            createdAt: data.createdAt as Timestamp, 
-            updatedAt: data.updatedAt ? (data.updatedAt as Timestamp) : undefined,
+            createdAt: createdAtTimestamp, 
+            updatedAt: updatedAtTimestamp,
           } as Contract;
         });
         setContracts(contractList);
         setIsLoadingContracts(false);
       }, (error) => {
         console.error("Error fetching contracts with onSnapshot:", error);
+        toast({ title: "Error Listening to Contracts", description: "Could not load contract updates in real-time. Please refresh.", variant: "destructive" });
         setContracts([]);
         setIsLoadingContracts(false);
-        // TODO: Optionally, add a toast notification for the user here
       });
 
       return () => unsubscribe();
@@ -53,9 +75,8 @@ export default function ContractsPage() {
       setContracts([]);
       setIsLoadingContracts(false);
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, toast]);
 
-  // handleContractAdded function removed
 
   const filteredContracts = contracts.filter(contract =>
     (contract.brand || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -92,7 +113,7 @@ export default function ContractsPage() {
             <Button variant="outline" disabled>
               <Download className="mr-2 h-4 w-4" /> Export All
             </Button>
-            {user && <UploadContractDialog /* onContractAdded prop removed */ />}
+            {user && <UploadContractDialog />}
           </div>
         }
       />
