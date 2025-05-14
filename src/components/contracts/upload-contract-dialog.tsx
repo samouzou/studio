@@ -1,6 +1,5 @@
 
 "use client";
-
 import { useState, useTransition, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +22,8 @@ import type { Contract } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
-import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp, Timestamp } from '@/lib/firebase'; // Firestore
+import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp, Timestamp, storage } from '@/lib/firebase'; // Firestore & Storage
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // Firebase Storage functions
 
 interface UploadContractDialogProps {
   onContractAdded: (newContract: Contract) => void;
@@ -105,28 +105,34 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     }
 
     setIsSaving(true);
+    let fileUrl = "";
+
     try {
+      if (selectedFile) {
+        const fileRef = storageRef(storage, `contracts/${user.uid}/${selectedFile.name}`);
+        const uploadResult = await uploadBytes(fileRef, selectedFile);
+        fileUrl = await getDownloadURL(uploadResult.ref);
+      }
+
       // Data for Firestore document
-      const contractDataForFirestore = {
+      const contractDataForFirestore: Omit<Contract, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any, updatedAt: any } = {
         userId: user.uid,
         brand: parsedDetails.brand || "Unknown Brand",
         amount: parsedDetails.amount || 0,
-        dueDate: parsedDetails.dueDate || new Date().toISOString().split('T')[0], // Stays as YYYY-MM-DD string
+        dueDate: parsedDetails.dueDate || new Date().toISOString().split('T')[0],
         status: 'pending' as Contract['status'],
         contractType: 'other' as Contract['contractType'],
         contractText: contractText,
-        fileName: fileName || "Pasted Contract",
+        fileName: fileName || (selectedFile ? selectedFile.name : "Pasted Contract"),
+        fileUrl: fileUrl || undefined,
         summary: summary?.summary || "No summary available.",
         extractedTerms: parsedDetails.extractedTerms || {},
-        createdAt: firebaseServerTimestamp(), // Use server timestamp
-        updatedAt: firebaseServerTimestamp(), // Use server timestamp
+        createdAt: firebaseServerTimestamp(),
+        updatedAt: firebaseServerTimestamp(),
       };
 
       const docRef = await addDoc(collection(db, 'contracts'), contractDataForFirestore);
       
-      // Create a contract object for local state update with client-side timestamps
-      // This ensures the UI can render it immediately without fetching again.
-      // The actual Firestore document will have the server-generated timestamp.
       const contractForLocalState: Contract = {
         id: docRef.id,
         userId: user.uid,
@@ -136,11 +142,12 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         status: 'pending',
         contractType: 'other',
         contractText: contractText,
-        fileName: fileName || "Pasted Contract",
+        fileName: fileName || (selectedFile ? selectedFile.name : "Pasted Contract"),
+        fileUrl: fileUrl || undefined,
         summary: summary?.summary || "No summary available.",
         extractedTerms: parsedDetails.extractedTerms || {},
-        createdAt: Timestamp.now(), // Client-side Timestamp for immediate UI update
-        updatedAt: Timestamp.now(), // Client-side Timestamp for immediate UI update
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
       };
 
       onContractAdded(contractForLocalState);
@@ -173,13 +180,13 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
             <FileText className="h-6 w-6 text-primary" /> Add New Contract
           </DialogTitle>
           <DialogDescription>
-            Paste the contract text below to parse its terms using AI. File upload coming soon.
+            Upload a contract file and/or paste its text below to parse its terms using AI.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[calc(80vh-250px)]">
         <div className="grid gap-6 p-1 pr-4">
            <div>
-            <Label htmlFor="fileName">File Name (Optional)</Label>
+            <Label htmlFor="fileName">File Name (Optional - auto-fills on upload)</Label>
             <Input 
               id="fileName" 
               type="text" 
@@ -194,22 +201,31 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
             <Input
               id="contractFile"
               type="file"
+              className="mt-1"
               onChange={(e) => {
-                setSelectedFile(e.target.files ? e.target.files[0] : null);
-                if (e.target.files && e.target.files[0]) setFileName(e.target.files[0].name);
+                const file = e.target.files ? e.target.files[0] : null;
+                setSelectedFile(file);
+                if (file) {
+                  setFileName(file.name); // Auto-fill filename
+                  // Optionally, read file content to contractText if it's a text-based file
+                  // For simplicity, this example assumes users paste text if they want AI parsing on it
+                }
               }}
             />
           </div>
           <div>
-            <Label htmlFor="contractText">Paste Contract Text*</Label>
+            <Label htmlFor="contractText">Paste Contract Text (for AI Parsing)*</Label>
             <Textarea
               id="contractText"
               value={contractText}
               onChange={(e) => setContractText(e.target.value)}
-              placeholder="Paste the full text of your contract here..."
+              placeholder="Paste the full text of your contract here if you want AI to extract details and summarize..."
               rows={8}
               className="mt-1"
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              *Pasting text is required if you want AI to extract details and summarize.
+            </p>
           </div>
 
           <Button onClick={handleParseContract} disabled={isParsing || !contractText.trim() || isSaving} className="w-full sm:w-auto">
@@ -218,7 +234,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
             ) : (
               <Wand2 className="mr-2 h-4 w-4" />
             )}
-            Parse with AI
+            Parse Text with AI
           </Button>
 
           {parseError && (
@@ -266,7 +282,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         </ScrollArea>
         <DialogFooter className="pt-4 border-t">
           <Button variant="outline" onClick={() => setIsOpen(false)} disabled={isSaving}>Cancel</Button>
-          <Button onClick={handleSaveContract} disabled={isParsing || !parsedDetails || isSaving}>
+          <Button onClick={handleSaveContract} disabled={isParsing || (!parsedDetails && !selectedFile) || isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Save Contract
           </Button>

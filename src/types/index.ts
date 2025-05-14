@@ -19,6 +19,7 @@ export interface Contract {
   summary?: string;
   contractText?: string;
   fileName?: string;
+  fileUrl?: string; // URL to the uploaded file in Firebase Storage
   createdAt: Timestamp; // Changed from string
   updatedAt?: Timestamp; // Changed from string
 }
@@ -34,3 +35,4 @@ export interface UpcomingIncome extends Pick<Contract, 'id' | 'brand' | 'amount'
 export interface AtRiskPayment extends Pick<Contract, 'id' | 'brand' | 'amount' | 'dueDate' | 'status'> {
   riskReason: string;
 }
+
