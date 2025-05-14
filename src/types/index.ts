@@ -19,7 +19,7 @@ export interface Contract {
   summary?: string;
   contractText?: string;
   fileName?: string;
-  fileUrl?: string; // URL to the uploaded file in Firebase Storage
+  fileUrl: string | null; // URL to the uploaded file in Firebase Storage, can be null
   createdAt: Timestamp; // Changed from string
   updatedAt?: Timestamp; // Changed from string
 }

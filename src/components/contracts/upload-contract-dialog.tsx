@@ -106,13 +106,13 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     }
 
     setIsSaving(true);
-    let fileUrl = "";
+    let fileUrlToSave: string | null = null;
 
     try {
       if (selectedFile) {
         const fileRef = storageRef(storage, `contracts/${user.uid}/${selectedFile.name}`);
         const uploadResult = await uploadBytes(fileRef, selectedFile);
-        fileUrl = await getDownloadURL(uploadResult.ref);
+        fileUrlToSave = await getDownloadURL(uploadResult.ref);
       }
 
       // Ensure parsedDetails exists or provide defaults
@@ -134,9 +134,9 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         dueDate: currentParsedDetails.dueDate || new Date().toISOString().split('T')[0],
         status: 'pending' as Contract['status'],
         contractType: 'other' as Contract['contractType'],
-        contractText: contractText, // Save pasted text even if parsing fails or not initiated
+        contractText: contractText, 
         fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
-        fileUrl: fileUrl || undefined,
+        fileUrl: fileUrlToSave, // Use null if no file
         summary: currentSummary.summary,
         extractedTerms: currentParsedDetails.extractedTerms || {},
         createdAt: firebaseServerTimestamp(),
@@ -155,11 +155,11 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
         contractType: 'other',
         contractText: contractText,
         fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
-        fileUrl: fileUrl || undefined,
+        fileUrl: fileUrlToSave, // Use null if no file
         summary: currentSummary.summary,
         extractedTerms: currentParsedDetails.extractedTerms || {},
-        createdAt: Timestamp.now(), // Use client-side Timestamp for immediate UI update
-        updatedAt: Timestamp.now(), // Use client-side Timestamp for immediate UI update
+        createdAt: Timestamp.now(), 
+        updatedAt: Timestamp.now(), 
       };
 
       onContractAdded(contractForLocalState);
@@ -218,9 +218,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
                 const file = e.target.files ? e.target.files[0] : null;
                 setSelectedFile(file);
                 if (file) {
-                  setFileName(file.name); // Auto-fill filename
-                  // Optionally, read file content to contractText if it's a text-based file
-                  // For simplicity, this example assumes users paste text if they want AI parsing on it
+                  setFileName(file.name); 
                 }
               }}
             />
@@ -303,3 +301,4 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     </Dialog>
   );
 }
+
