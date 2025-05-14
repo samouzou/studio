@@ -1,3 +1,4 @@
+
 import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
 import { 
   getAuth, 
@@ -24,7 +25,8 @@ import {
   where, 
   deleteDoc, 
   updateDoc,
-  writeBatch
+  writeBatch,
+  onSnapshot // Added onSnapshot here
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -59,7 +61,7 @@ const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 // Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
-const db = getFirestore(app, );
+const db = getFirestore(app);
 const storage = getStorage(app);
 
 const googleAuthProvider = new GoogleAuthProvider();
@@ -68,7 +70,7 @@ export {
   app, 
   auth, 
   db, 
-  storage, // Added storage to exports
+  storage, 
   googleAuthProvider, 
   // Auth methods
   signInWithPopup,
@@ -92,4 +94,5 @@ export {
   deleteDoc, 
   updateDoc,
   writeBatch,
+  onSnapshot // Added onSnapshot here
 };
