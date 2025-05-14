@@ -1,5 +1,14 @@
 import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, type User as FirebaseUser } from 'firebase/auth';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, // Added import
+  type User as FirebaseUser 
+} from 'firebase/auth';
 import { 
   getFirestore, 
   collection, 
@@ -65,6 +74,7 @@ export {
   signOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword, // Added to exports
   type FirebaseUser,
   // Firestore methods
   collection, 

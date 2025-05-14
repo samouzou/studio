@@ -1,8 +1,9 @@
+
 "use client";
 
 import type { ReactNode } from 'react';
 import { useState, useEffect, createContext, useContext } from 'react';
-import { auth, googleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, type FirebaseUser } from '@/lib/firebase';
+import { auth, googleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword as firebaseSignInWithEmailAndPassword, type FirebaseUser } from '@/lib/firebase';
 
 export interface UserProfile {
   uid: string;
@@ -71,9 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithEmailAndPassword = async (email: string, password: string) => {
     try {
       setIsLoading(true); // Set loading before attempting sign-in
-      // Assuming signInWithEmailAndPassword is imported from firebase.ts
-      // @ts-ignore // Temporarily ignore until the import is confirmed
-      await signInWithEmailAndPassword(auth, email, password);
+      await firebaseSignInWithEmailAndPassword(auth, email, password);
     } catch (error) {
       console.error("Error signing in with email and password:", error);
       setIsLoading(false); // Clear loading on error
@@ -83,8 +82,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signupWithEmailAndPassword = async (email: string, password: string) => {
     try {
       setIsLoading(true); // Set loading before attempting signup
-      // Assuming createUserWithEmailAndPassword is imported from firebase.ts
-      // @ts-ignore // Temporarily ignore until the import is confirmed
       await createUserWithEmailAndPassword(auth, email, password);
       // onAuthStateChanged will handle setting the user and clearing loading state
     } catch (error) {
@@ -109,3 +106,4 @@ export function useAuth() {
   }
   return context;
 }
+
