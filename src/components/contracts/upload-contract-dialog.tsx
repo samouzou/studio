@@ -36,6 +36,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
   const [isParsing, startParseTransition] = useTransition();
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { user } = useAuth();
 
   const [parsedDetails, setParsedDetails] = useState<ExtractContractDetailsOutput | null>(null);
@@ -46,6 +47,7 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     if (!isOpen) {
       setContractText("");
       setFileName("");
+      setSelectedFile(null);
       setParsedDetails(null);
       setSummary(null);
       setParseError(null);
@@ -188,6 +190,17 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
             />
           </div>
           <div>
+            <Label htmlFor="contractFile">Upload Contract File (Optional)</Label>
+            <Input
+              id="contractFile"
+              type="file"
+              onChange={(e) => {
+                setSelectedFile(e.target.files ? e.target.files[0] : null);
+                if (e.target.files && e.target.files[0]) setFileName(e.target.files[0].name);
+              }}
+            />
+          </div>
+          <div>
             <Label htmlFor="contractText">Paste Contract Text*</Label>
             <Textarea
               id="contractText"
@@ -262,3 +275,5 @@ export function UploadContractDialog({ onContractAdded }: UploadContractDialogPr
     </Dialog>
   );
 }
+
+    

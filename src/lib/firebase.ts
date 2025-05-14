@@ -25,7 +25,7 @@ import {
   deleteDoc, 
   updateDoc,
   writeBatch
-} from 'firebase/firestore';
+} from 'firebase/firestore'; // Uncomment if you plan to use Firebase Storage
 import { getStorage } from 'firebase/storage'; // Uncomment if you plan to use Firebase Storage
 
 const firebaseConfigValues = {
@@ -60,7 +60,7 @@ const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app); // Uncomment if using Storage
+const storage = getStorage(app);
 
 const googleAuthProvider = new GoogleAuthProvider();
 
@@ -91,5 +91,4 @@ export {
   deleteDoc, 
   updateDoc,
   writeBatch,
-  storage // Uncomment if using Storage
 };
