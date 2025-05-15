@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { extractContractDetails, ExtractContractDetailsOutput } from "@/ai/flows/extract-contract-details";
 import { summarizeContractTerms, SummarizeContractTermsOutput } from "@/ai/flows/summarize-contract-terms";
+import { getNegotiationSuggestions, type NegotiationSuggestionsOutput } from "@/ai/flows/negotiation-suggestions-flow";
 import { Loader2, UploadCloud, FileText, Wand2, AlertTriangle } from "lucide-react";
 import type { Contract } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +31,7 @@ export function UploadContractDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const [contractText, setContractText] = useState("");
   const [fileName, setFileName] = useState("");
-  const [projectName, setProjectName] = useState(""); // New state for project name
+  const [projectName, setProjectName] = useState("");
   const [isParsing, startParseTransition] = useTransition();
   const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
@@ -39,16 +40,18 @@ export function UploadContractDialog() {
 
   const [parsedDetails, setParsedDetails] = useState<ExtractContractDetailsOutput | null>(null);
   const [summary, setSummary] = useState<SummarizeContractTermsOutput | null>(null);
+  const [negotiationSuggestions, setNegotiationSuggestions] = useState<NegotiationSuggestionsOutput | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setContractText("");
       setFileName("");
-      setProjectName(""); // Reset project name
+      setProjectName("");
       setSelectedFile(null);
       setParsedDetails(null);
       setSummary(null);
+      setNegotiationSuggestions(null);
       setParseError(null);
       setIsSaving(false);
     }
@@ -67,26 +70,29 @@ export function UploadContractDialog() {
     setParseError(null);
     setParsedDetails(null);
     setSummary(null);
+    setNegotiationSuggestions(null);
 
     startParseTransition(async () => {
       try {
-        const [details, termsSummary] = await Promise.all([
+        const [details, termsSummary, negSuggestions] = await Promise.all([
           extractContractDetails({ contractText }),
           summarizeContractTerms({ contractText }),
+          getNegotiationSuggestions({ contractText }),
         ]);
         setParsedDetails(details);
         setSummary(termsSummary);
+        setNegotiationSuggestions(negSuggestions);
         toast({
-          title: "Parsing Successful",
-          description: "Contract details extracted and summarized.",
+          title: "AI Analysis Successful",
+          description: "Contract details extracted, summarized, and negotiation suggestions provided.",
         });
       } catch (error) {
-        console.error("Parsing error:", error);
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during parsing.";
+        console.error("AI Parsing error:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred during AI processing.";
         setParseError(errorMessage);
         toast({
-          title: "Parsing Failed",
-          description: `Could not parse contract: ${errorMessage}`,
+          title: "AI Analysis Failed",
+          description: `Could not process contract with AI: ${errorMessage}`,
           variant: "destructive",
         });
       }
@@ -133,10 +139,10 @@ export function UploadContractDialog() {
         dueDate: currentParsedDetails.dueDate || new Date().toISOString().split('T')[0],
         status: 'pending' as Contract['status'],
         contractType: 'other' as Contract['contractType'],
-        projectName: projectName.trim() || undefined, // Save project name, or undefined if empty
+        projectName: projectName.trim() || undefined,
         contractText: contractText, 
         fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
-        fileUrl: fileUrlToSave, 
+        fileUrl: fileUrlToSave || null,
         summary: currentSummary.summary,
         extractedTerms: cleanedExtractedTerms,
         createdAt: firebaseServerTimestamp(),
@@ -209,7 +215,7 @@ export function UploadContractDialog() {
               onChange={(e) => {
                 const file = e.target.files ? e.target.files[0] : null;
                 setSelectedFile(file);
-                if (file && !fileName) { // Only auto-fill if fileName is empty
+                if (file && !fileName) { 
                   setFileName(file.name); 
                 }
               }}
@@ -226,7 +232,7 @@ export function UploadContractDialog() {
               className="mt-1"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              *Pasting text is required if you want AI to extract details and summarize.
+              *Pasting text is required if you want AI to extract details, summarize, and get negotiation suggestions.
             </p>
           </div>
 
@@ -236,20 +242,20 @@ export function UploadContractDialog() {
             ) : (
               <Wand2 className="mr-2 h-4 w-4" />
             )}
-            Parse Text with AI
+            Process Text with AI
           </Button>
 
           {parseError && (
             <div className="mt-4 p-3 rounded-md bg-destructive/10 text-destructive border border-destructive/20 flex items-start gap-2">
               <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
               <div>
-                <p className="font-semibold">Parsing Error</p>
+                <p className="font-semibold">AI Processing Error</p>
                 <p className="text-sm">{parseError}</p>
               </div>
             </div>
           )}
 
-          {(parsedDetails || summary) && !parseError && (
+          {(parsedDetails || summary || negotiationSuggestions) && !parseError && (
             <div className="mt-2 space-y-4">
               <h3 className="text-lg font-semibold text-foreground">AI Analysis Results</h3>
               {parsedDetails && (
@@ -278,13 +284,36 @@ export function UploadContractDialog() {
                   </CardContent>
                 </Card>
               )}
+              {negotiationSuggestions && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-md">Negotiation Suggestions</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    {negotiationSuggestions.paymentTerms && <p><strong>Payment Terms:</strong> {negotiationSuggestions.paymentTerms}</p>}
+                    {negotiationSuggestions.exclusivity && <p><strong>Exclusivity:</strong> {negotiationSuggestions.exclusivity}</p>}
+                    {negotiationSuggestions.ipRights && <p><strong>IP Rights:</strong> {negotiationSuggestions.ipRights}</p>}
+                    {negotiationSuggestions.generalSuggestions && negotiationSuggestions.generalSuggestions.length > 0 && (
+                      <div>
+                        <strong>General Suggestions:</strong>
+                        <ul className="list-disc list-inside ml-4 text-muted-foreground">
+                          {negotiationSuggestions.generalSuggestions.map((item, i) => <li key={i}>{item}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {(!negotiationSuggestions.paymentTerms && !negotiationSuggestions.exclusivity && !negotiationSuggestions.ipRights && (!negotiationSuggestions.generalSuggestions || negotiationSuggestions.generalSuggestions.length === 0)) && (
+                      <p className="text-muted-foreground">No specific negotiation suggestions generated by AI for this text.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </div>
         </ScrollArea>
         <DialogFooter className="pt-4 border-t">
           <Button variant="outline" onClick={() => setIsOpen(false)} disabled={isSaving}>Cancel</Button>
-          <Button onClick={handleSaveContract} disabled={isParsing || (!parsedDetails && !selectedFile && !contractText.trim()) || isSaving}>
+          <Button onClick={handleSaveContract} disabled={isParsing || (!selectedFile && !contractText.trim() && !parsedDetails) || isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Save Contract
           </Button>
