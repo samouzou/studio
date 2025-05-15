@@ -41,7 +41,7 @@ export function ContractList({ contracts }: ContractListProps) {
 
 
   return (
-    <div className="overflow-hidden rounded-lg border shadow-sm bg-card">
+    <div className="overflow-hidden rounded-lg border shadow-sm bg-card text-card-foreground">
       <Table>
         <TableHeader>
           <TableRow>
