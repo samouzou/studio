@@ -9,7 +9,8 @@ export interface Contract {
   dueDate: string; // YYYY-MM-DD
   status: 'pending' | 'paid' | 'overdue' | 'at_risk' | 'invoiced';
   contractType: 'sponsorship' | 'consulting' | 'affiliate' | 'retainer' | 'other';
-  extractedTerms?: { // Made optional and fields within are optional
+  projectName?: string; // Optional project name
+  extractedTerms?: {
     paymentMethod?: string;
     usageRights?: string;
     terminationClauses?: string;
@@ -19,9 +20,9 @@ export interface Contract {
   summary?: string;
   contractText?: string;
   fileName?: string;
-  fileUrl: string | null; // URL to the uploaded file in Firebase Storage, can be null
-  createdAt: Timestamp; // Changed from string
-  updatedAt?: Timestamp; // Changed from string
+  fileUrl: string | null;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface EarningsDataPoint {
@@ -30,9 +31,8 @@ export interface EarningsDataPoint {
   earnings: number;
 }
 
-export interface UpcomingIncome extends Pick<Contract, 'id' | 'brand' | 'amount' | 'dueDate'> {}
+export interface UpcomingIncome extends Pick<Contract, 'id' | 'brand' | 'amount' | 'dueDate' | 'projectName'> {}
 
-export interface AtRiskPayment extends Pick<Contract, 'id' | 'brand' | 'amount' | 'dueDate' | 'status'> {
+export interface AtRiskPayment extends Pick<Contract, 'id' | 'brand' | 'amount' | 'dueDate' | 'status' | 'projectName'> {
   riskReason: string;
 }
-

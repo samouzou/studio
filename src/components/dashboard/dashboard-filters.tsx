@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
@@ -5,15 +6,43 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarDays, Filter, Briefcase } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { DateRange } from "react-day-picker";
 import { format } from "date-fns";
-import { MOCK_BRAND_NAMES, MOCK_PROJECT_NAMES } from "@/data/mock-data";
 
-export function DashboardFilters() {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>();
-  const [selectedBrand, setSelectedBrand] = useState<string>("all");
-  const [selectedProject, setSelectedProject] = useState<string>("all");
+export interface DashboardFilterState {
+  brand: string;
+  project: string;
+  dateRange?: DateRange;
+}
+
+interface DashboardFiltersProps {
+  availableBrands: string[];
+  availableProjects: string[];
+  onFiltersChange: (filters: DashboardFilterState) => void;
+  initialFilters: DashboardFilterState;
+}
+
+export function DashboardFilters({ 
+  availableBrands, 
+  availableProjects, 
+  onFiltersChange,
+  initialFilters 
+}: DashboardFiltersProps) {
+  const [selectedBrand, setSelectedBrand] = useState<string>(initialFilters.brand);
+  const [selectedProject, setSelectedProject] = useState<string>(initialFilters.project);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(initialFilters.dateRange);
+
+  useEffect(() => {
+    onFiltersChange({ brand: selectedBrand, project: selectedProject, dateRange });
+  }, [selectedBrand, selectedProject, dateRange, onFiltersChange]);
+  
+  const handleClearFilters = () => {
+    setSelectedBrand("all");
+    setSelectedProject("all");
+    setDateRange(undefined);
+    // The useEffect will trigger onFiltersChange with cleared values
+  };
 
   return (
     <div className="mb-6 flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 shadow-sm">
@@ -26,8 +55,21 @@ export function DashboardFilters() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Brands</SelectItem>
-          {MOCK_BRAND_NAMES.map(brand => (
+          {availableBrands.map(brand => (
             <SelectItem key={brand} value={brand}>{brand}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select value={selectedProject} onValueChange={setSelectedProject}>
+        <SelectTrigger className="w-full sm:w-[180px] bg-background">
+          <Briefcase className="mr-2 h-4 w-4 text-muted-foreground" />
+          <SelectValue placeholder="All Projects" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Projects</SelectItem>
+           {availableProjects.map(project => (
+            <SelectItem key={project} value={project}>{project}</SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -63,24 +105,7 @@ export function DashboardFilters() {
         </PopoverContent>
       </Popover>
       
-      <Select value={selectedProject} onValueChange={setSelectedProject}>
-        <SelectTrigger className="w-full sm:w-[180px] bg-background">
-          <Briefcase className="mr-2 h-4 w-4 text-muted-foreground" />
-          <SelectValue placeholder="All Projects" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Projects</SelectItem>
-           {MOCK_PROJECT_NAMES.map(project => (
-            <SelectItem key={project} value={project}>{project}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Button variant="ghost" onClick={() => { 
-        setDateRange(undefined);
-        setSelectedBrand("");
-        setSelectedProject("");
-      }} className="text-muted-foreground hover:text-primary">
+      <Button variant="ghost" onClick={handleClearFilters} className="text-muted-foreground hover:text-primary">
         Clear Filters
       </Button>
     </div>
