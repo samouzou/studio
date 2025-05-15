@@ -10,7 +10,7 @@ import { DashboardFilters } from "@/components/dashboard/dashboard-filters";
 import { SummaryCard } from "@/components/dashboard/summary-card";
 import { DollarSign, FileText, AlertCircle, CalendarCheck, Loader2, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import { db, collection, query, where, getDocs } from '@/lib/firebase';
+import { db, collection, query, where, getDocs, Timestamp } from '@/lib/firebase';
 import type { Contract, EarningsDataPoint, UpcomingIncome, AtRiskPayment } from "@/types";
 import { MOCK_EARNINGS_DATA } from "@/data/mock-data"; // Keep for chart as placeholder
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,48 +47,121 @@ export default function DashboardPage() {
           const contractsCol = collection(db, 'contracts');
           const q = query(contractsCol, where('userId', '==', user.uid));
           const contractSnapshot = await getDocs(q);
-          const fetchedContracts = contractSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contract));
+          
+          const fetchedContracts: Contract[] = contractSnapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            // Ensure timestamps are correctly handled
+            let createdAt = data.createdAt;
+            if (createdAt && !(createdAt instanceof Timestamp)) {
+              if (createdAt.seconds && typeof createdAt.seconds === 'number') {
+                createdAt = new Timestamp(createdAt.seconds, createdAt.nanoseconds || 0);
+              } else {
+                createdAt = Timestamp.now(); // Fallback
+              }
+            }
+            let updatedAt = data.updatedAt;
+            if (updatedAt && !(updatedAt instanceof Timestamp)) {
+              if (updatedAt.seconds && typeof updatedAt.seconds === 'number') {
+                updatedAt = new Timestamp(updatedAt.seconds, updatedAt.nanoseconds || 0);
+              } else {
+                updatedAt = Timestamp.now(); // Fallback
+              }
+            }
+            return { 
+              id: docSnap.id, 
+              ...data,
+              createdAt: createdAt || Timestamp.now(), // Ensure createdAt is a Timestamp
+              updatedAt: updatedAt, // Can be undefined if not set
+            } as Contract;
+          });
           
           const today = new Date();
-          
-          const upcomingIncomeSource: UpcomingIncome[] = fetchedContracts
-            .filter(c => (c.status === 'pending' || c.status === 'invoiced') && new Date(c.dueDate + 'T00:00:00') >= today)
-            .map(({ id, brand, amount, dueDate }) => ({ id, brand, amount, dueDate }))
-            .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+          const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          const sevenDaysFromTodayMidnight = addDays(todayMidnight, 7);
 
-          const atRiskPaymentsSource: AtRiskPayment[] = fetchedContracts
-            .filter(c => c.status === 'overdue' || (c.status === 'pending' && new Date(c.dueDate + 'T00:00:00') < addDays(new Date(), 7) && new Date(c.dueDate + 'T00:00:00') >= today))
-            .map(({ id, brand, amount, dueDate, status }) => ({
-              id, brand, amount, dueDate, status,
-              riskReason: status === 'overdue' ? 'Payment overdue' : (new Date(dueDate + 'T00:00:00') < today ? 'Payment overdue' : 'Due soon'),
-            }));
+          const upcomingIncomeSource: UpcomingIncome[] = [];
+          const atRiskPaymentsList: AtRiskPayment[] = [];
+          let totalPendingIncome = 0;
+          let paidThisMonthAmount = 0;
+          let totalOverdueCount = 0;
 
-          const totalPendingIncome = upcomingIncomeSource.reduce((sum, item) => sum + item.amount, 0);
-          const totalContractsCount = fetchedContracts.length;
-          const totalOverdueCount = atRiskPaymentsSource.filter(p => p.status === 'overdue' || new Date(p.dueDate + 'T00:00:00') < today).length;
-          
-          const paidThisMonthAmount = fetchedContracts.filter(c => {
-            const contractDueDate = new Date(c.dueDate + 'T00:00:00'); // Ensure date is parsed correctly
-            return c.status === 'paid' && 
-                   contractDueDate.getMonth() === today.getMonth() && 
-                   contractDueDate.getFullYear() === today.getFullYear();
-          }).reduce((sum, item) => sum + item.amount, 0);
+          fetchedContracts.forEach(c => {
+            const contractDueDate = new Date(c.dueDate + 'T00:00:00'); // Ensure parsing as local date
+
+            // Upcoming Income & Total Pending Income
+            if ((c.status === 'pending' || c.status === 'invoiced') && contractDueDate >= todayMidnight) {
+              upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate });
+              if(c.status === 'pending' || c.status === 'invoiced'){ // double check status for pending income sum
+                 totalPendingIncome += c.amount;
+              }
+            }
+
+            // Paid This Month
+            if (c.status === 'paid') {
+              const paidDate = contractDueDate; // Assuming payment happens around due date for simplicity
+              if (paidDate.getMonth() === today.getMonth() && 
+                  paidDate.getFullYear() === today.getFullYear()) {
+                paidThisMonthAmount += c.amount;
+              }
+            }
+
+            // At Risk Payments & Overdue Count
+            let isAtRisk = false;
+            let riskReason = "";
+            let effectiveStatus = c.status;
+
+            if (c.status === 'overdue') {
+              isAtRisk = true;
+              riskReason = 'Payment overdue';
+              totalOverdueCount++;
+            } else if (c.status === 'pending') {
+              if (contractDueDate < todayMidnight) { // Past due
+                isAtRisk = true;
+                riskReason = 'Payment overdue';
+                effectiveStatus = 'overdue'; 
+                totalOverdueCount++;
+              } else if (contractDueDate < sevenDaysFromTodayMidnight) { // Due soon (today up to next 6 days)
+                isAtRisk = true;
+                riskReason = 'Due soon';
+              }
+            }
+
+            if (isAtRisk) {
+              atRiskPaymentsList.push({
+                id: c.id,
+                brand: c.brand,
+                amount: c.amount,
+                dueDate: c.dueDate,
+                status: effectiveStatus,
+                riskReason: riskReason,
+              });
+            }
+          });
+
+          upcomingIncomeSource.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+          atRiskPaymentsList.sort((a, b) => {
+            const aIsOverdue = a.riskReason === 'Payment overdue';
+            const bIsOverdue = b.riskReason === 'Payment overdue';
+            if (aIsOverdue && !bIsOverdue) return -1;
+            if (!aIsOverdue && bIsOverdue) return 1;
+            return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+          });
 
           setStats({
             totalPendingIncome,
             upcomingIncomeCount: upcomingIncomeSource.length,
-            totalContractsCount,
-            atRiskPaymentsCount: atRiskPaymentsSource.length,
+            totalContractsCount: fetchedContracts.length,
+            atRiskPaymentsCount: atRiskPaymentsList.length,
             totalOverdueCount,
             paidThisMonthAmount,
             upcomingIncomeList: upcomingIncomeSource,
-            atRiskPaymentsList: atRiskPaymentsSource,
-            earningsChartData: MOCK_EARNINGS_DATA, // Keep MOCK for now
+            atRiskPaymentsList: atRiskPaymentsList,
+            earningsChartData: MOCK_EARNINGS_DATA, 
           });
 
         } catch (error) {
           console.error("Error fetching dashboard data:", error);
-          setStats(null); // Or set to default error state
+          setStats(null);
         } finally {
           setIsLoadingData(false);
         }
