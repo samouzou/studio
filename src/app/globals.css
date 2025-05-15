@@ -8,7 +8,7 @@ body {
 
 @layer base {
   :root {
-    /* Verza Theme HSL Variables */
+    /* Verza Theme HSL Variables (Keep these definitions) */
     --verza-blue-h: 214;
     --verza-blue-s: 100%;
     --verza-blue-l: 62%;
@@ -22,33 +22,33 @@ body {
     --electric-coral-l: 71%;
 
     /* Light Theme */
-    --background: 220 20% 98%; /* Very light gray, almost white */
-    --foreground: var(--verza-midnight-h) var(--verza-midnight-s) 15%; /* Darker Midnight for text */
+    --background: 0 0% 98%; /* Off-white, almost pure white e.g. #FAFAFA */
+    --foreground: 220 10% 15%; /* Dark gray for text e.g. #202429 */
 
-    --card: var(--verza-midnight-h) var(--verza-midnight-s) var(--verza-midnight-l); /* Verza Midnight for cards */
-    --card-foreground: 0 0% 98%; /* White text on dark cards */
+    --card: 0 0% 100%; /* Pure white for cards */
+    --card-foreground: 220 10% 15%; /* Dark gray text on cards */
 
-    --popover: var(--verza-midnight-h) var(--verza-midnight-s) var(--verza-midnight-l);
-    --popover-foreground: 0 0% 98%;
+    --popover: 0 0% 100%; /* Pure white for popovers */
+    --popover-foreground: 220 10% 15%; /* Dark gray text on popovers */
 
     --primary: var(--verza-blue-h) var(--verza-blue-s) var(--verza-blue-l);
-    --primary-foreground: 0 0% 100%; /* White */
+    --primary-foreground: 0 0% 100%; /* White text on primary */
 
-    --secondary: 220 15% 94%; /* Light gray for secondary elements */
-    --secondary-foreground: var(--verza-midnight-h) var(--verza-midnight-s) 20%; /* Dark text for secondary */
+    --secondary: 220 10% 94%; /* Lighter gray for secondary elements e.g. #EEF0F2 */
+    --secondary-foreground: 220 10% 30%; /* Medium-dark gray for secondary text */
 
-    --muted: 220 15% 90%;
-    --muted-foreground: var(--verza-midnight-h) var(--verza-midnight-s) 40%;
+    --muted: 220 10% 88%; /* Light gray for muted backgrounds e.g. #DCE0E5 */
+    --muted-foreground: 220 10% 45%; /* Medium gray for muted text */
 
     --accent: var(--electric-coral-h) var(--electric-coral-s) var(--electric-coral-l);
-    --accent-foreground: var(--verza-midnight-h) var(--verza-midnight-s) var(--verza-midnight-l); /* Verza Midnight text on Coral */
+    --accent-foreground: 0 0% 100%; /* White text on accent for better contrast */
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
+    --destructive: 0 70% 50%; /* A slightly softer red for light theme */
+    --destructive-foreground: 0 0% 100%; /* White text on destructive */
 
-    --border: 220 15% 88%; /* Light gray border */
-    --input: 220 15% 92%;  /* Light gray input background */
-    --ring: var(--verza-blue-h) var(--verza-blue-s) var(--verza-blue-l);
+    --border: 220 10% 85%; /* Slightly more visible border e.g. #D2D7DE */
+    --input: 0 0% 100%;  /* White input background, relies on border */
+    --ring: var(--verza-blue-h) var(--verza-blue-s) calc(var(--verza-blue-l) - 10%); /* Slightly darker blue for focus ring */
     
     --radius: 0.5rem;
 
@@ -59,16 +59,20 @@ body {
     --chart-4: 43 90% 65%;    /* A complementary yellow/gold */
     --chart-5: 180 50% 60%;   /* A complementary teal/cyan */
     
-    /* Sidebar (Light theme - using a contrasting dark sidebar based on Verza Midnight) */
-    --sidebar-background: var(--verza-midnight-h) var(--verza-midnight-s) calc(var(--verza-midnight-l) + 2%); /* Slightly lighter midnight */
-    --sidebar-foreground: 0 0% 95%;
-    --sidebar-border: var(--verza-midnight-h) var(--verza-midnight-s) calc(var(--verza-midnight-l) + 5%);
-    --sidebar-primary: var(--verza-blue-h) var(--verza-blue-s) var(--verza-blue-l);
+    /* Sidebar (Light theme - truly light sidebar) */
+    --sidebar-background: 220 10% 96%; /* Very light gray, slightly different from main bg e.g. #F3F5F7 */
+    --sidebar-foreground: 220 10% 25%; /* Dark gray text for sidebar */
+    --sidebar-border: 220 10% 90%;    /* Light border for sidebar e.g. #E2E5E9 */
+    
+    /* Active/Selected item in sidebar */
+    --sidebar-primary: var(--verza-blue-h) var(--verza-blue-s) var(--verza-blue-l); 
     --sidebar-primary-foreground: 0 0% 100%;
-    /* Sidebar accent and its foreground for hover/active states */
-    --sidebar-accent: var(--verza-blue-h) var(--verza-blue-s) calc(var(--verza-blue-l) + 10%); /* Brighter Verza Blue for hover */
-    --sidebar-accent-foreground: 0 0% 100%; 
-    --sidebar-ring: var(--verza-blue-h) var(--verza-blue-s) var(--verza-blue-l);
+    
+    /* Hover item in sidebar */
+    --sidebar-accent: 220 10% 90%; /* Slightly darker light gray for hover bg e.g. #E2E5E9 */
+    --sidebar-accent-foreground: 220 10% 15%; /* Darker text on hover */
+    
+    --sidebar-ring: var(--verza-blue-h) var(--verza-blue-s) calc(var(--verza-blue-l) - 10%);
   }
 
   .dark {
@@ -112,9 +116,10 @@ body {
     --sidebar-background: var(--verza-midnight-h) var(--verza-midnight-s) calc(var(--verza-midnight-l) - 2%); /* Even darker midnight for distinct sidebar */
     --sidebar-foreground: 0 0% 95%;
     --sidebar-border: var(--verza-midnight-h) var(--verza-midnight-s) var(--verza-midnight-l);
+    /* Active/Selected item in sidebar */
     --sidebar-primary: var(--verza-blue-h) var(--verza-blue-s) var(--verza-blue-l); 
     --sidebar-primary-foreground: 0 0% 100%;
-     /* Sidebar accent and its foreground for hover/active states */
+     /* Hover item in sidebar */
     --sidebar-accent: var(--verza-blue-h) var(--verza-blue-s) calc(var(--verza-blue-l) - 10%); /* Slightly darker/muted Verza Blue for hover in dark */
     --sidebar-accent-foreground: 0 0% 95%;
     --sidebar-ring: var(--verza-blue-h) var(--verza-blue-s) var(--verza-blue-l);
