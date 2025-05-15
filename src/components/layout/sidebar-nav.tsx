@@ -10,8 +10,6 @@ import {
   Settings,
   LogOut,
   UserCircle,
-  // Bell, // Bell not used
-  // Scale, // Scale icon for logo is replaced by SVG
   ChevronDown,
 } from "lucide-react";
 import {
@@ -22,7 +20,6 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  // SidebarTrigger, // SidebarTrigger not used here
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -35,7 +32,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/hooks/use-auth"; // Updated import
+import { useAuth } from "@/hooks/use-auth";
+import { ThemeToggle } from "@/components/theme-toggle"; // Import ThemeToggle
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -46,7 +44,7 @@ const navItems = [
 
 export function SidebarNav() {
   const pathname = usePathname();
-  const { user, logout, isLoading } = useAuth(); // Updated hook usage
+  const { user, logout, isLoading } = useAuth();
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -55,7 +53,6 @@ export function SidebarNav() {
   };
 
   if (isLoading) {
-    // Optional: Show a loading state for the sidebar user info
     return (
       <Sidebar collapsible="icon">
         <SidebarHeader className="p-4">
@@ -69,7 +66,6 @@ export function SidebarNav() {
           </div>
         </SidebarHeader>
         <SidebarContent>
-          {/* Skeleton for nav items can be added if desired */}
         </SidebarContent>
         <SidebarFooter className="p-2">
           <div className="h-14 w-full rounded-md bg-muted animate-pulse" />
@@ -77,7 +73,6 @@ export function SidebarNav() {
       </Sidebar>
     );
   }
-
 
   const activeUser = user; 
   const userInitial = activeUser?.displayName ? activeUser.displayName.charAt(0).toUpperCase() : (activeUser?.email ? activeUser.email.charAt(0).toUpperCase() : 'U');
@@ -117,6 +112,9 @@ export function SidebarNav() {
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter className="p-2">
+         <div className="mb-2 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
+            <ThemeToggle />
+         </div>
          {activeUser ? (
             <DropdownMenu>
             <DropdownMenuTrigger asChild>
