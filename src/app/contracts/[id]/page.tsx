@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Edit3, Trash2, FileText, DollarSign, CalendarDays, Briefcase, Info, CheckCircle, AlertTriangle, Loader2, Lightbulb } from 'lucide-react';
+import { ArrowLeft, Edit3, Trash2, FileText, DollarSign, CalendarDays, Briefcase, Info, CheckCircle, AlertTriangle, Loader2, Lightbulb, FileSpreadsheet } from 'lucide-react';
 import Link from 'next/link';
 import type { Contract } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Badge } from '@/components/ui/badge'; // Added for invoice status
 
 function DetailItem({ icon: Icon, label, value, valueClassName }: { icon: React.ElementType, label: string, value: React.ReactNode, valueClassName?: string }) {
   return (
@@ -95,6 +96,8 @@ export default function ContractDetailPage() {
               ...data,
               createdAt: createdAt,
               updatedAt: updatedAt,
+              // Ensure invoiceStatus has a default if not present
+              invoiceStatus: data.invoiceStatus || 'none',
             } as Contract);
           } else {
             setContract(null);
@@ -201,10 +204,15 @@ export default function ContractDetailPage() {
         title={(contract.brand || "Contract") + " - " + (contract.fileName || "Details")}
         description={`Details for contract ID: ${contract.id}`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button variant="outline" asChild>
               <Link href="/contracts">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
+              </Link>
+            </Button>
+             <Button variant="secondary" asChild>
+              <Link href={`/contracts/${contract.id}/invoice`}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" /> Manage Invoice
               </Link>
             </Button>
             <Button variant="outline" disabled><Edit3 className="mr-2 h-4 w-4" /> Edit</Button>
@@ -265,8 +273,33 @@ export default function ContractDetailPage() {
                   } 
                 />
               )}
+              {contract.invoiceNumber && (
+                <DetailItem icon={FileSpreadsheet} label="Invoice Number" value={contract.invoiceNumber} />
+              )}
+              {contract.invoiceStatus && contract.invoiceStatus !== 'none' && (
+                 <DetailItem 
+                    icon={Info} 
+                    label="Invoice Status" 
+                    value={<Badge variant="outline" className="capitalize">{contract.invoiceStatus.replace('_', ' ')}</Badge>} 
+                 />
+              )}
             </CardContent>
           </Card>
+
+          { (contract.clientName || contract.clientEmail || contract.clientAddress || contract.paymentInstructions) && (
+             <Card className="shadow-lg">
+                <CardHeader>
+                    <CardTitle>Client & Payment Info</CardTitle>
+                    <CardDescription>Details for invoicing purposes.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                    {contract.clientName && <p><strong className="text-foreground">Client Name:</strong> <span className="text-muted-foreground">{contract.clientName}</span></p>}
+                    {contract.clientEmail && <p><strong className="text-foreground">Client Email:</strong> <span className="text-muted-foreground">{contract.clientEmail}</span></p>}
+                    {contract.clientAddress && <p><strong className="text-foreground">Client Address:</strong> <span className="text-muted-foreground whitespace-pre-wrap">{contract.clientAddress}</span></p>}
+                    {contract.paymentInstructions && <p><strong className="text-foreground">Payment Instructions:</strong> <span className="text-muted-foreground whitespace-pre-wrap">{contract.paymentInstructions}</span></p>}
+                </CardContent>
+             </Card>
+          )}
 
           {contract.extractedTerms && Object.keys(contract.extractedTerms).length > 0 && (
             <Card className="shadow-lg">

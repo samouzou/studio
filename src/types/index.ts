@@ -11,6 +11,13 @@ export interface Contract {
   status: 'pending' | 'paid' | 'overdue' | 'at_risk' | 'invoiced';
   contractType: 'sponsorship' | 'consulting' | 'affiliate' | 'retainer' | 'other';
   projectName?: string; // Optional project name
+  
+  // Client details for invoicing
+  clientName?: string;
+  clientEmail?: string;
+  clientAddress?: string;
+  paymentInstructions?: string;
+
   extractedTerms?: {
     paymentMethod?: string;
     usageRights?: string;
@@ -22,7 +29,13 @@ export interface Contract {
   contractText?: string;
   fileName?: string;
   fileUrl: string | null;
-  negotiationSuggestions?: NegotiationSuggestionsOutput | null; // Added
+  negotiationSuggestions?: NegotiationSuggestionsOutput | null;
+  
+  // Invoice-specific fields
+  invoiceStatus?: 'none' | 'draft' | 'sent' | 'viewed' | 'paid' | 'overdue';
+  invoiceHtmlContent?: string;
+  invoiceNumber?: string;
+  
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
