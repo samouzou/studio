@@ -8,22 +8,23 @@ interface ContractStatusBadgeProps {
 export function ContractStatusBadge({ status }: ContractStatusBadgeProps) {
   let variant: "default" | "secondary" | "destructive" | "outline" = "default";
   let text = status.charAt(0).toUpperCase() + status.slice(1);
+  let customClassName = "capitalize";
 
   switch (status) {
     case 'pending':
-      variant = 'outline';
       text = 'Pending';
-      break;
+      // Custom styling for pending to ensure visibility on card background
+      // This creates an "outline-like" badge using card-foreground colors.
+      return <Badge className="border border-card-foreground/60 text-card-foreground bg-transparent hover:bg-card-foreground/10 capitalize">{text}</Badge>;
     case 'paid':
-      variant = 'default'; // Using primary color for "paid"
       // Custom style for "paid" to be green-ish
-      return <Badge className="bg-green-500 hover:bg-green-600 text-white capitalize">{text}</Badge>;
+      return <Badge className="bg-green-500 hover:bg-green-600 text-primary-foreground capitalize">{text}</Badge>;
     case 'overdue':
       variant = 'destructive';
       text = 'Overdue';
       break;
     case 'at_risk':
-      variant = 'destructive';
+      variant = 'destructive'; // Kept destructive for at_risk, could be yellow/orange too
       text = 'At Risk';
       break;
     case 'invoiced':
@@ -32,7 +33,9 @@ export function ContractStatusBadge({ status }: ContractStatusBadgeProps) {
       break;
     default:
       variant = 'outline';
+      // For any other outline status, ensure it's visible on a card
+      customClassName = "capitalize border-card-foreground/60 text-card-foreground bg-transparent hover:bg-card-foreground/10";
   }
 
-  return <Badge variant={variant} className="capitalize">{text.replace('_', ' ')}</Badge>;
+  return <Badge variant={variant} className={customClassName}>{text.replace('_', ' ')}</Badge>;
 }

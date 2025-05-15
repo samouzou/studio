@@ -65,7 +65,7 @@ export function ContractList({ contracts }: ContractListProps) {
               <TableCell>
                 <ContractStatusBadge status={contract.status} />
               </TableCell>
-              <TableCell className="hidden lg:table-cell text-sm text-muted-foreground truncate max-w-[150px]">
+              <TableCell className="hidden lg:table-cell text-sm truncate max-w-[150px]">
                 {contract.fileName || 'N/A'}
               </TableCell>
               {/* <TableCell className="hidden lg:table-cell">{formatDate(contract.createdAt)}</TableCell> */}
