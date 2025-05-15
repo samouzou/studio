@@ -1,5 +1,6 @@
 
 import type { Timestamp } from 'firebase/firestore';
+import type { NegotiationSuggestionsOutput } from '@/ai/flows/negotiation-suggestions-flow';
 
 export interface Contract {
   id: string; // Document ID from Firestore
@@ -21,6 +22,7 @@ export interface Contract {
   contractText?: string;
   fileName?: string;
   fileUrl: string | null;
+  negotiationSuggestions?: NegotiationSuggestionsOutput | null; // Added
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Edit3, Trash2, FileText, DollarSign, CalendarDays, Briefcase, Info, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Edit3, Trash2, FileText, DollarSign, CalendarDays, Briefcase, Info, CheckCircle, AlertTriangle, Loader2, Lightbulb } from 'lucide-react';
 import Link from 'next/link';
 import type { Contract } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,8 +13,8 @@ import { ContractStatusBadge } from '@/components/contracts/contract-status-badg
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, Timestamp, deleteDoc } from '@/lib/firebase';
-import { storage } from '@/lib/firebase'; // Import storage
-import { ref as storageFileRef, deleteObject } from 'firebase/storage'; // Import storage functions
+import { storage } from '@/lib/firebase';
+import { ref as storageFileRef, deleteObject } from 'firebase/storage';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -121,27 +121,19 @@ export default function ContractDetailPage() {
     if (!contract) return;
     setIsDeleting(true);
     try {
-      // Delete file from Firebase Storage if fileUrl exists
       if (contract.fileUrl) {
         try {
-          // Firebase Storage URLs are typically in the format:
-          // https://firebasestorage.googleapis.com/v0/b/YOUR_PROJECT_ID.appspot.com/o/PATH_TO_FILE?alt=media&token=TOKEN
-          // We need to extract the PATH_TO_FILE part for deleteObject.
-          // A more robust way is to store the path separately, but for now we parse the URL.
-          // Or, simpler, if the fileUrl is the download URL, Firebase SDK's ref(storage, fileUrl) can often resolve it.
           const fileRef = storageFileRef(storage, contract.fileUrl);
           await deleteObject(fileRef);
           toast({ title: "File Deleted", description: "Associated file removed from storage." });
         } catch (storageError: any) {
-          // Log storage error but don't block Firestore deletion if file deletion fails (e.g., file already deleted or bad URL)
           console.error("Error deleting file from storage:", storageError);
-          if (storageError.code !== 'storage/object-not-found') { // Don't show error if file simply wasn't there
+          if (storageError.code !== 'storage/object-not-found') { 
              toast({ title: "Storage Error", description: "Could not delete associated file. It might have been already removed or the URL is invalid.", variant: "destructive" });
           }
         }
       }
 
-      // Delete document from Firestore
       const contractDocRef = doc(db, 'contracts', contract.id);
       await deleteDoc(contractDocRef);
 
@@ -165,6 +157,7 @@ export default function ContractDetailPage() {
           <div className="lg:col-span-2 space-y-6">
             <Skeleton className="h-48 w-full rounded-lg" />
             <Skeleton className="h-32 w-full rounded-lg" />
+            <Skeleton className="h-40 w-full rounded-lg" />
           </div>
           <div className="lg:col-span-1 space-y-6">
             <Skeleton className="h-40 w-full rounded-lg" />
@@ -195,6 +188,12 @@ export default function ContractDetailPage() {
   const formattedCreatedAt = contract.createdAt instanceof Timestamp
     ? contract.createdAt.toDate().toLocaleDateString()
     : 'N/A';
+  
+  const hasNegotiationSuggestions = contract.negotiationSuggestions && 
+                                   (contract.negotiationSuggestions.paymentTerms ||
+                                    contract.negotiationSuggestions.exclusivity ||
+                                    contract.negotiationSuggestions.ipRights ||
+                                    (contract.negotiationSuggestions.generalSuggestions && contract.negotiationSuggestions.generalSuggestions.length > 0));
 
   return (
     <>
@@ -252,6 +251,7 @@ export default function ContractDetailPage() {
               <DetailItem icon={DollarSign} label="Amount" value={`$${contract.amount.toLocaleString()}`} />
               <DetailItem icon={CalendarDays} label="Due Date" value={formattedDueDate} />
               <DetailItem icon={FileText} label="Contract Type" value={<span className="capitalize">{contract.contractType}</span>} />
+              {contract.projectName && <DetailItem icon={Briefcase} label="Project Name" value={contract.projectName} />}
               <DetailItem icon={Info} label="File Name" value={contract.fileName || "N/A"} />
                <DetailItem icon={CalendarDays} label="Created At" value={formattedCreatedAt} />
                {contract.fileUrl && (
@@ -291,6 +291,33 @@ export default function ContractDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {hasNegotiationSuggestions && contract.negotiationSuggestions && (
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Lightbulb className="h-5 w-5 text-yellow-500" />
+                  AI Negotiation Suggestions
+                </CardTitle>
+                <CardDescription>Advice for negotiating better terms.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {contract.negotiationSuggestions.paymentTerms && <p><strong className="text-foreground">Payment Terms:</strong> <span className="text-muted-foreground">{contract.negotiationSuggestions.paymentTerms}</span></p>}
+                {contract.negotiationSuggestions.exclusivity && <p><strong className="text-foreground">Exclusivity:</strong> <span className="text-muted-foreground">{contract.negotiationSuggestions.exclusivity}</span></p>}
+                {contract.negotiationSuggestions.ipRights && <p><strong className="text-foreground">IP Rights:</strong> <span className="text-muted-foreground">{contract.negotiationSuggestions.ipRights}</span></p>}
+                {contract.negotiationSuggestions.generalSuggestions && contract.negotiationSuggestions.generalSuggestions.length > 0 && (
+                  <div>
+                    <strong className="text-foreground">General Suggestions:</strong>
+                    <ul className="list-disc list-inside ml-4 text-muted-foreground">
+                      {contract.negotiationSuggestions.generalSuggestions.map((item, i) => <li key={i}>{item}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {!hasNegotiationSuggestions && <p className="text-muted-foreground">No negotiation suggestions available for this contract.</p>}
+              </CardContent>
+            </Card>
+          )}
+
         </div>
 
         <div className="lg:col-span-1 space-y-6">
@@ -327,5 +354,3 @@ export default function ContractDetailPage() {
     </>
   );
 }
-
-    
