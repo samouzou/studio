@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react"; // Added useCallback
 import type { DateRange } from "react-day-picker";
 import { PageHeader } from "@/components/page-header";
 import { EarningsChart } from "@/components/dashboard/earnings-chart";
@@ -25,13 +25,13 @@ const addDays = (date: Date, days: number): Date => {
 interface DashboardStats {
   totalPendingIncome: number;
   upcomingIncomeCount: number;
-  totalContractsCount: number; // This will be total contracts *before* filtering for display
+  totalContractsCount: number;
   atRiskPaymentsCount: number;
   totalOverdueCount: number;
   paidThisMonthAmount: number;
   upcomingIncomeList: UpcomingIncome[];
   atRiskPaymentsList: AtRiskPayment[];
-  earningsChartData: EarningsDataPoint[]; // Stays mock for now
+  earningsChartData: EarningsDataPoint[];
 }
 
 const initialFilterState: DashboardFilterState = {
@@ -67,23 +67,27 @@ export default function DashboardPage() {
               if (createdAt.seconds && typeof createdAt.seconds === 'number') {
                 createdAt = new Timestamp(createdAt.seconds, createdAt.nanoseconds || 0);
               } else { createdAt = Timestamp.now(); }
+            } else if (!createdAt) {
+              createdAt = Timestamp.now();
             }
+
             let updatedAt = data.updatedAt;
             if (updatedAt && !(updatedAt instanceof Timestamp)) {
               if (updatedAt.seconds && typeof updatedAt.seconds === 'number') {
                 updatedAt = new Timestamp(updatedAt.seconds, updatedAt.nanoseconds || 0);
-              } else { updatedAt = Timestamp.now(); }
+              } // If not a Timestamp object, leave as is (could be undefined)
             }
+            // If updatedAt is not present in data, it will be undefined, which is fine for the Contract type.
+            
             return { 
               id: docSnap.id, 
               ...data,
-              createdAt: createdAt || Timestamp.now(),
+              createdAt: createdAt,
               updatedAt: updatedAt,
             } as Contract;
           });
           setAllContracts(fetchedContracts);
 
-          // Extract unique brand and project names for filters
           const brands = new Set<string>();
           const projects = new Set<string>();
           fetchedContracts.forEach(c => {
@@ -109,22 +113,23 @@ export default function DashboardPage() {
 
   // Calculate stats whenever allContracts or filters change
   useEffect(() => {
-    if (isLoadingData || !user) return; // Don't calculate if still loading or no user
+    if (isLoadingData || !user) return;
 
     const filteredContracts = allContracts.filter(c => {
       const brandMatch = filters.brand === "all" || c.brand === filters.brand;
       const projectMatch = filters.project === "all" || c.projectName === filters.project;
       
       let dateMatch = true;
-      if (filters.dateRange?.from) {
-        const contractDueDate = new Date(c.dueDate + 'T00:00:00');
+      if (c.dueDate && filters.dateRange?.from) { 
+        const contractDueDate = new Date(c.dueDate + 'T00:00:00'); 
         const fromDate = new Date(filters.dateRange.from.getFullYear(), filters.dateRange.from.getMonth(), filters.dateRange.from.getDate());
         
         if (filters.dateRange.to) {
           const toDate = new Date(filters.dateRange.to.getFullYear(), filters.dateRange.to.getMonth(), filters.dateRange.to.getDate(), 23, 59, 59);
           dateMatch = contractDueDate >= fromDate && contractDueDate <= toDate;
-        } else {
-          dateMatch = contractDueDate >= fromDate && contractDueDate < addDays(fromDate, 1) ; // Match single day
+        } else { 
+          const fromDateEnd = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate(), 23, 59, 59);
+          dateMatch = contractDueDate >= fromDate && contractDueDate <= fromDateEnd;
         }
       }
       return brandMatch && projectMatch && dateMatch;
@@ -138,16 +143,15 @@ export default function DashboardPage() {
     const atRiskPaymentsList: AtRiskPayment[] = [];
     let totalPendingIncome = 0;
     let paidThisMonthAmount = 0;
-    let totalOverdueCount = 0;
+    let currentTotalOverdueCount = 0;
 
     filteredContracts.forEach(c => {
+      if (!c.dueDate) return; 
       const contractDueDate = new Date(c.dueDate + 'T00:00:00'); 
 
       if ((c.status === 'pending' || c.status === 'invoiced') && contractDueDate >= todayMidnight) {
         upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
-        if(c.status === 'pending' || c.status === 'invoiced'){
-           totalPendingIncome += c.amount;
-        }
+        totalPendingIncome += c.amount;
       }
 
       if (c.status === 'paid') {
@@ -162,20 +166,17 @@ export default function DashboardPage() {
       let riskReason = "";
       let effectiveStatus = c.status;
 
-      if (c.status === 'overdue') {
+      if (c.status === 'overdue' || ((c.status === 'pending' || c.status === 'invoiced') && contractDueDate < todayMidnight)) {
         isAtRisk = true;
         riskReason = 'Payment overdue';
-        totalOverdueCount++;
-      } else if (c.status === 'pending' || c.status === 'invoiced') { // Include invoiced here
-        if (contractDueDate < todayMidnight) { 
-          isAtRisk = true;
-          riskReason = 'Payment overdue';
-          effectiveStatus = 'overdue'; 
-          totalOverdueCount++;
-        } else if (contractDueDate < sevenDaysFromTodayMidnight) { 
-          isAtRisk = true;
-          riskReason = 'Due soon';
-        }
+        effectiveStatus = 'overdue'; 
+      } else if ((c.status === 'pending' || c.status === 'invoiced') && contractDueDate < sevenDaysFromTodayMidnight) { 
+        isAtRisk = true;
+        riskReason = 'Due soon';
+      }
+      
+      if (effectiveStatus === 'overdue') {
+        currentTotalOverdueCount++;
       }
 
       if (isAtRisk) {
@@ -190,11 +191,11 @@ export default function DashboardPage() {
         });
       }
     });
-
+    
     upcomingIncomeSource.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     atRiskPaymentsList.sort((a, b) => {
-      const aIsOverdue = a.riskReason === 'Payment overdue';
-      const bIsOverdue = b.riskReason === 'Payment overdue';
+      const aIsOverdue = a.status === 'overdue';
+      const bIsOverdue = b.status === 'overdue';
       if (aIsOverdue && !bIsOverdue) return -1;
       if (!aIsOverdue && bIsOverdue) return 1;
       return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
@@ -203,9 +204,9 @@ export default function DashboardPage() {
     setStats({
       totalPendingIncome,
       upcomingIncomeCount: upcomingIncomeSource.length,
-      totalContractsCount: allContracts.length, // Show total contracts before filtering
+      totalContractsCount: allContracts.length,
       atRiskPaymentsCount: atRiskPaymentsList.length,
-      totalOverdueCount,
+      totalOverdueCount: currentTotalOverdueCount,
       paidThisMonthAmount,
       upcomingIncomeList: upcomingIncomeSource,
       atRiskPaymentsList: atRiskPaymentsList,
@@ -214,11 +215,11 @@ export default function DashboardPage() {
 
   }, [allContracts, filters, user, isLoadingData]);
 
-  const handleFiltersChange = (newFilters: DashboardFilterState) => {
+  const handleFiltersChange = useCallback((newFilters: DashboardFilterState) => {
     setFilters(newFilters);
-  };
+  }, []); // setFilters is stable, so empty dependency array is okay.
 
-  if (authLoading || isLoadingData) {
+  if (authLoading || (isLoadingData && user)) {
     return (
       <>
         <PageHeader
@@ -226,8 +227,8 @@ export default function DashboardPage() {
           description="Overview of your earnings, contracts, and payment timelines."
         />
         <DashboardFilters 
-          availableBrands={[]} 
-          availableProjects={[]} 
+          availableBrands={availableBrands} 
+          availableProjects={availableProjects} 
           onFiltersChange={handleFiltersChange}
           initialFilters={initialFilterState} 
         />
@@ -251,22 +252,24 @@ export default function DashboardPage() {
 
   if (!user) {
      return (
-        <div className="flex flex-col items-center justify-center h-full">
+        <div className="flex flex-col items-center justify-center h-full pt-10">
             <AlertCircle className="w-12 h-12 text-primary mb-4" />
             <p className="text-xl text-muted-foreground">Please log in to view your dashboard.</p>
         </div>
      )
   }
   
-  if (!stats) {
+  if (!stats && !isLoadingData) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
+      <div className="flex flex-col items-center justify-center h-full pt-10">
          <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Could not load dashboard data.</h2>
-        <p className="text-muted-foreground">Please try again later.</p>
+        <p className="text-muted-foreground">Please try refreshing the page or check your connection.</p>
       </div>
     );
   }
+  
+  if (!stats) return null;
 
   return (
     <>
@@ -291,7 +294,7 @@ export default function DashboardPage() {
         />
         <SummaryCard 
           title="Total Active Contracts" 
-          value={stats.totalContractsCount.toString()} // This shows total before filtering
+          value={stats.totalContractsCount.toString()}
           icon={FileText}
           description="All contracts managed"
         />
@@ -325,3 +328,5 @@ export default function DashboardPage() {
     </>
   );
 }
+
+    
