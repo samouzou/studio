@@ -9,7 +9,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -131,15 +130,16 @@ export function UploadContractDialog() {
       const cleanedExtractedTerms = currentParsedDetails.extractedTerms 
         ? JSON.parse(JSON.stringify(currentParsedDetails.extractedTerms)) 
         : {};
+      
+      const trimmedProjectName = projectName.trim();
 
-      const contractDataForFirestore: Omit<Contract, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any, updatedAt: any } = {
+      const contractDataForFirestore: Omit<Contract, 'id' | 'createdAt' | 'updatedAt'> & { createdAt: any, updatedAt: any } & { projectName?: string } = {
         userId: user.uid,
         brand: currentParsedDetails.brand || "Unknown Brand",
         amount: currentParsedDetails.amount || 0,
         dueDate: currentParsedDetails.dueDate || new Date().toISOString().split('T')[0],
         status: 'pending' as Contract['status'],
         contractType: 'other' as Contract['contractType'],
-        projectName: projectName.trim() || undefined,
         contractText: contractText, 
         fileName: fileName || (selectedFile ? selectedFile.name : (contractText.trim() ? "Pasted Contract" : "Untitled Contract")),
         fileUrl: fileUrlToSave || null,
@@ -148,6 +148,10 @@ export function UploadContractDialog() {
         createdAt: firebaseServerTimestamp(),
         updatedAt: firebaseServerTimestamp(),
       };
+
+      if (trimmedProjectName) {
+        contractDataForFirestore.projectName = trimmedProjectName;
+      }
 
       await addDoc(collection(db, 'contracts'), contractDataForFirestore);
       
@@ -322,3 +326,4 @@ export function UploadContractDialog() {
     </Dialog>
   );
 }
+ 
