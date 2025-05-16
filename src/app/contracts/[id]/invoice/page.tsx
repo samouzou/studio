@@ -12,12 +12,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions'; // Updated import
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { loadStripe } from '@stripe/stripe-js';
 import type { Contract } from '@/types';
 import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/generate-invoice-html-flow';
-import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react'; // Added Send icon
 import Link from 'next/link';
+
+// const CREATE_CHECKOUT_SESSION_FUNCTION_URL = "https://createstripecheckoutsession-vkwtxfkd2a-uc.a.run.app"; // Replaced by same-project function
 
 export default function ManageInvoicePage() {
   const params = useParams();
@@ -34,6 +36,7 @@ export default function ManageInvoicePage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [isSendingInvoice, setIsSendingInvoice] = useState(false); // New state for sending invoice
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -113,7 +116,7 @@ export default function ManageInvoicePage() {
     setIsSaving(true);
     try {
       const contractDocRef = doc(db, 'contracts', contract.id);
-      const newStatus = invoiceStatus === 'none' ? 'draft' : invoiceStatus;
+      const newStatus = invoiceStatus === 'none' ? 'draft' : invoiceStatus; // Default to draft if none
       await updateDoc(contractDocRef, {
         invoiceHtmlContent: generatedInvoiceHtml,
         invoiceNumber: invoiceNumber,
@@ -121,7 +124,7 @@ export default function ManageInvoicePage() {
         updatedAt: Timestamp.now(),
       });
       setContract(prev => prev ? {...prev, invoiceHtmlContent: generatedInvoiceHtml, invoiceNumber: invoiceNumber, invoiceStatus: newStatus } : null);
-      setInvoiceStatus(newStatus); // Ensure local state matches
+      setInvoiceStatus(newStatus);
       toast({ title: "Invoice Saved", description: "Invoice details have been saved." });
       console.log('SIMULATE_LOG: Invoice generated/updated for contract ID:', contract.id, 'Invoice Number:', invoiceNumber);
     } catch (error) {
@@ -134,7 +137,7 @@ export default function ManageInvoicePage() {
 
   const handleStatusChange = async (newStatus: Contract['invoiceStatus']) => {
     if (!contract || !newStatus) return;
-    setIsSaving(true); // Use same loading state or a dedicated one
+    setIsSaving(true); 
     try {
       const contractDocRef = doc(db, 'contracts', contract.id);
       await updateDoc(contractDocRef, {
@@ -153,6 +156,35 @@ export default function ManageInvoicePage() {
     }
   };
 
+  const handleSendInvoice = async () => {
+    if (!contract || (!generatedInvoiceHtml && !contract.invoiceHtmlContent)) {
+      toast({ title: "Cannot Send", description: "No invoice content available to send.", variant: "destructive" });
+      return;
+    }
+    if (!contract.clientEmail) {
+      toast({ title: "Missing Client Email", description: "Client email is required to send an invoice. Please add it to the contract.", variant: "destructive" });
+      return;
+    }
+
+    setIsSendingInvoice(true);
+    try {
+      const contractDocRef = doc(db, 'contracts', contract.id);
+      await updateDoc(contractDocRef, {
+        invoiceStatus: 'sent',
+        updatedAt: Timestamp.now(),
+      });
+      setContract(prev => prev ? {...prev, invoiceStatus: 'sent' } : null);
+      setInvoiceStatus('sent');
+      toast({ title: "Invoice Marked as Sent", description: `Invoice ${invoiceNumber} marked as sent. (Email to ${contract.clientEmail} simulated).` });
+      console.log(`SIMULATE_LOG: Triggering email send for invoice ${invoiceNumber} to ${contract.clientEmail} for contract ID: ${contract.id}. Actual email sending would be handled by a backend Cloud Function.`);
+    } catch (error) {
+      console.error("Error marking invoice as sent:", error);
+      toast({ title: "Send Failed", description: "Could not mark invoice as sent.", variant: "destructive" });
+    } finally {
+      setIsSendingInvoice(false);
+    }
+  };
+
   const handlePayInvoice = async () => {
     if (!contract || !user) {
       toast({ title: "Error", description: "Contract or user data missing.", variant: "destructive" });
@@ -167,7 +199,8 @@ export default function ManageInvoicePage() {
     setIsProcessingPayment(true);
     try {
       const firebaseFunctions = getFunctions(); 
-      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeCheckoutSession'); // Reverted to httpsCallable
+      // const createCheckoutSession = httpsCallableFromURL(firebaseFunctions, CREATE_CHECKOUT_SESSION_FUNCTION_URL); // For cross-project calls
+      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeCheckoutSession'); // For same-project calls
       
       const result = await createCheckoutSession({
         contractId: contract.id,
@@ -204,7 +237,6 @@ export default function ManageInvoicePage() {
     }
   };
 
-
   if (isLoadingContract || authLoading) {
     return (
       <div className="space-y-4 p-4">
@@ -226,7 +258,8 @@ export default function ManageInvoicePage() {
     );
   }
 
-  const canPay = invoiceStatus === 'draft' || invoiceStatus === 'sent' || invoiceStatus === 'overdue';
+  const canPay = (invoiceStatus === 'draft' || invoiceStatus === 'sent' || invoiceStatus === 'overdue') && contract.amount > 0;
+  const canSendInvoice = (!!generatedInvoiceHtml || !!contract.invoiceHtmlContent) && invoiceStatus === 'draft';
 
   return (
     <>
@@ -268,7 +301,7 @@ export default function ManageInvoicePage() {
                  <Select 
                     value={invoiceStatus || 'none'} 
                     onValueChange={(value) => handleStatusChange(value as Contract['invoiceStatus'])}
-                    disabled={isSaving || isLoadingContract}
+                    disabled={isSaving || isLoadingContract || isSendingInvoice}
                   >
                   <SelectTrigger className="max-w-sm" id="invoiceStatusSelect">
                     <SelectValue placeholder="Set Status" />
@@ -286,23 +319,29 @@ export default function ManageInvoicePage() {
             </div>
             
             <div className="flex flex-wrap gap-2 pt-2">
-              <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment}>
+              <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment || isSendingInvoice}>
                 {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 {generatedInvoiceHtml || contract.invoiceHtmlContent ? "Re-generate with AI" : "Generate with AI"}
               </Button>
-              <Button onClick={handleSaveInvoice} disabled={isSaving || !generatedInvoiceHtml || !invoiceNumber || isProcessingPayment}>
+              <Button onClick={handleSaveInvoice} disabled={isSaving || !generatedInvoiceHtml || !invoiceNumber || isProcessingPayment || isSendingInvoice}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Invoice
               </Button>
-               {canPay && contract.amount > 0 && ( 
-                <Button onClick={handlePayInvoice} disabled={isProcessingPayment || isGenerating || isSaving} variant="default">
+              {canSendInvoice && (
+                <Button onClick={handleSendInvoice} disabled={isSendingInvoice || isGenerating || isSaving || isProcessingPayment}>
+                  {isSendingInvoice ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Send to Client
+                </Button>
+              )}
+               {canPay && ( 
+                <Button onClick={handlePayInvoice} disabled={isProcessingPayment || isGenerating || isSaving || isSendingInvoice} variant="default">
                   {isProcessingPayment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
                   Pay Invoice (${contract.amount.toLocaleString()})
                 </Button>
               )}
             </div>
              <p className="text-xs text-muted-foreground">
-                Generating an invoice will use the contract details. Saving will update the contract record.
+                Generating an invoice will use the contract details. Saving will update the contract record. Sending marks the invoice as sent.
              </p>
           </CardContent>
         </Card>
@@ -317,10 +356,18 @@ export default function ManageInvoicePage() {
            <Card>
             <CardHeader> <CardTitle>Previously Saved Invoice</CardTitle> </CardHeader>
             <CardContent> <div className="prose dark:prose-invert max-w-none p-4 border rounded-md bg-background overflow-auto max-h-[60vh]" dangerouslySetInnerHTML={{ __html: contract.invoiceHtmlContent }} />
-               <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment} variant="link" className="mt-2 text-sm">
+               <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment || isSendingInvoice} variant="link" className="mt-2 text-sm">
                 {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 Re-generate with AI to reflect changes
               </Button>
+            </CardContent>
+          </Card>
+        )}
+         {(!generatedInvoiceHtml && !contract.invoiceHtmlContent) && (
+          <Card>
+            <CardHeader><CardTitle>No Invoice Generated Yet</CardTitle></CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground">Use the "Generate with AI" button to create an invoice for this contract.</p>
             </CardContent>
           </Card>
         )}
@@ -328,3 +375,5 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+
+    
