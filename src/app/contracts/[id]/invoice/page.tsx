@@ -7,13 +7,13 @@ import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Added Select
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions'; // For Cloud Function
-import { loadStripe } from '@stripe/stripe-js'; // For Stripe
+import { getFunctions, httpsCallableFromURL } from 'firebase/functions'; // Updated import
+import { loadStripe } from '@stripe/stripe-js';
 import type { Contract } from '@/types';
 import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/generate-invoice-html-flow';
 import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard } from 'lucide-react';
@@ -166,14 +166,26 @@ export default function ManageInvoicePage() {
 
     setIsProcessingPayment(true);
     try {
-      const firebaseFunctions = getFunctions();
-      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeCheckoutSession');
+      const firebaseFunctions = getFunctions(); // Initialize functions instance for the current Firebase project (used by SDK)
+      
+      // IMPORTANT: Replace this URL with the actual URL of your 'createStripeCheckoutSession'
+      // function deployed in your "verza-backend" Firebase project.
+      // It typically looks like: https://<region>-<your-verza-backend-project-id>.cloudfunctions.net/createStripeCheckoutSession
+      const CREATE_CHECKOUT_SESSION_FUNCTION_URL = "YOUR_VERZA_BACKEND_CREATE_CHECKOUT_SESSION_FUNCTION_URL_HERE";
+
+      if (CREATE_CHECKOUT_SESSION_FUNCTION_URL === "YOUR_VERZA_BACKEND_CREATE_CHECKOUT_SESSION_FUNCTION_URL_HERE") {
+         toast({ title: "Configuration Needed", description: "Please update the function URL in ManageInvoicePage.tsx to point to your backend function.", variant: "destructive", duration: 10000 });
+         setIsProcessingPayment(false);
+         return;
+      }
+
+      const createCheckoutSession = httpsCallableFromURL(firebaseFunctions, CREATE_CHECKOUT_SESSION_FUNCTION_URL);
       
       const result = await createCheckoutSession({
         contractId: contract.id,
-        amount: contract.amount, // Ensure amount is in correct format (e.g. dollars) for your function
-        currency: 'usd', // Or dynamically from contract if available
-        clientEmail: contract.clientEmail || user.email, // Fallback to user email
+        amount: contract.amount,
+        currency: 'usd', 
+        clientEmail: contract.clientEmail || user.email,
         successUrl: `${window.location.origin}/payment-success?contractId=${contract.id}&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: window.location.href,
       });
@@ -192,7 +204,13 @@ export default function ManageInvoicePage() {
       }
     } catch (error: any) {
       console.error("Payment processing error:", error);
-      toast({ title: "Payment Failed", description: error.message || "Could not initiate payment.", variant: "destructive" });
+      let description = "Could not initiate payment.";
+      if (error.code === 'functions/not-found') {
+        description = "Payment function not found. Ensure the backend URL is correct and the function is deployed.";
+      } else if (error.message) {
+        description = error.message;
+      }
+      toast({ title: "Payment Failed", description: description, variant: "destructive" });
     } finally {
       setIsProcessingPayment(false);
     }
@@ -288,7 +306,7 @@ export default function ManageInvoicePage() {
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Invoice
               </Button>
-               {canPay && contract.amount > 0 && ( // Only show pay button if status allows and amount is positive
+               {canPay && contract.amount > 0 && ( 
                 <Button onClick={handlePayInvoice} disabled={isProcessingPayment || isGenerating || isSaving} variant="default">
                   {isProcessingPayment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
                   Pay Invoice (${contract.amount.toLocaleString()})
@@ -322,3 +340,5 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+
+    
