@@ -16,10 +16,12 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { loadStripe } from '@stripe/stripe-js';
 import type { Contract } from '@/types';
 import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/generate-invoice-html-flow';
-import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react'; // Added Send icon
+import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react';
 import Link from 'next/link';
 
 // const CREATE_CHECKOUT_SESSION_FUNCTION_URL = "https://createstripecheckoutsession-vkwtxfkd2a-uc.a.run.app"; // Replaced by same-project function
+const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
+
 
 export default function ManageInvoicePage() {
   const params = useParams();
@@ -36,7 +38,7 @@ export default function ManageInvoicePage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [isSendingInvoice, setIsSendingInvoice] = useState(false); // New state for sending invoice
+  const [isSendingInvoice, setIsSendingInvoice] = useState(false);
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -116,7 +118,7 @@ export default function ManageInvoicePage() {
     setIsSaving(true);
     try {
       const contractDocRef = doc(db, 'contracts', contract.id);
-      const newStatus = invoiceStatus === 'none' ? 'draft' : invoiceStatus; // Default to draft if none
+      const newStatus = invoiceStatus === 'none' ? 'draft' : invoiceStatus; 
       await updateDoc(contractDocRef, {
         invoiceHtmlContent: generatedInvoiceHtml,
         invoiceNumber: invoiceNumber,
@@ -157,8 +159,8 @@ export default function ManageInvoicePage() {
   };
 
   const handleSendInvoice = async () => {
-    if (!contract || (!generatedInvoiceHtml && !contract.invoiceHtmlContent)) {
-      toast({ title: "Cannot Send", description: "No invoice content available to send.", variant: "destructive" });
+    if (!contract || (!generatedInvoiceHtml && !contract.invoiceHtmlContent) || !user) {
+      toast({ title: "Cannot Send", description: "No invoice content or user session available.", variant: "destructive" });
       return;
     }
     if (!contract.clientEmail) {
@@ -168,6 +170,32 @@ export default function ManageInvoicePage() {
 
     setIsSendingInvoice(true);
     try {
+      // @ts-ignore // Firebase user object has getIdToken
+      const idToken = await user.getIdToken(true);
+      const invoiceContentToSend = generatedInvoiceHtml || contract.invoiceHtmlContent;
+      
+      const emailBody = {
+        to: contract.clientEmail,
+        subject: `Invoice ${invoiceNumber || contract.invoiceNumber} from ${contract.brand}`,
+        text: `Hello ${contract.clientName || contract.brand},\n\nPlease find attached your invoice ${invoiceNumber || contract.invoiceNumber} for ${contract.projectName || 'services rendered'}.\n\nTotal Amount Due: $${contract.amount}\nDue Date: ${new Date(contract.dueDate).toLocaleDateString()}\n\nThank you,\n${user.displayName || 'Your Service Provider'}`,
+        html: invoiceContentToSend,
+      };
+
+      const response = await fetch(SEND_CONTRACT_NOTIFICATION_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(emailBody),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to send email. Status: ${response.status}`);
+      }
+
+      // If email sent successfully, update Firestore status
       const contractDocRef = doc(db, 'contracts', contract.id);
       await updateDoc(contractDocRef, {
         invoiceStatus: 'sent',
@@ -175,11 +203,12 @@ export default function ManageInvoicePage() {
       });
       setContract(prev => prev ? {...prev, invoiceStatus: 'sent' } : null);
       setInvoiceStatus('sent');
-      toast({ title: "Invoice Marked as Sent", description: `Invoice ${invoiceNumber} marked as sent. (Email to ${contract.clientEmail} simulated).` });
-      console.log(`SIMULATE_LOG: Triggering email send for invoice ${invoiceNumber} to ${contract.clientEmail} for contract ID: ${contract.id}. Actual email sending would be handled by a backend Cloud Function.`);
-    } catch (error) {
-      console.error("Error marking invoice as sent:", error);
-      toast({ title: "Send Failed", description: "Could not mark invoice as sent.", variant: "destructive" });
+      toast({ title: "Invoice Sent", description: `Invoice ${invoiceNumber} sent to ${contract.clientEmail}.` });
+      console.log(`LOG: Invoice ${invoiceNumber} sent to ${contract.clientEmail} for contract ID: ${contract.id}.`);
+
+    } catch (error: any) {
+      console.error("Error sending invoice:", error);
+      toast({ title: "Send Failed", description: error.message || "Could not send invoice email.", variant: "destructive" });
     } finally {
       setIsSendingInvoice(false);
     }
@@ -199,8 +228,7 @@ export default function ManageInvoicePage() {
     setIsProcessingPayment(true);
     try {
       const firebaseFunctions = getFunctions(); 
-      // const createCheckoutSession = httpsCallableFromURL(firebaseFunctions, CREATE_CHECKOUT_SESSION_FUNCTION_URL); // For cross-project calls
-      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeCheckoutSession'); // For same-project calls
+      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeCheckoutSession');
       
       const result = await createCheckoutSession({
         contractId: contract.id,
@@ -252,7 +280,7 @@ export default function ManageInvoicePage() {
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Contract Not Found</h2>
         <Button asChild variant="outline" onClick={() => router.push('/contracts')}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Contracts
+         <Link href="/contracts"> <ArrowLeft className="mr-2 h-4 w-4" /> Back to Contracts </Link>
         </Button>
       </div>
     );
@@ -341,7 +369,7 @@ export default function ManageInvoicePage() {
               )}
             </div>
              <p className="text-xs text-muted-foreground">
-                Generating an invoice will use the contract details. Saving will update the contract record. Sending marks the invoice as sent.
+                Generating an invoice will use the contract details. Saving will update the contract record. Sending marks the invoice as sent and attempts to email the client.
              </p>
           </CardContent>
         </Card>
@@ -375,5 +403,3 @@ export default function ManageInvoicePage() {
     </>
   );
 }
-
-    
