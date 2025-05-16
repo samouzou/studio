@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-import { getFunctions, httpsCallableFromURL } from 'firebase/functions';
+import { getFunctions, httpsCallable } from 'firebase/functions'; // Updated import
 import { loadStripe } from '@stripe/stripe-js';
 import type { Contract } from '@/types';
 import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/generate-invoice-html-flow';
@@ -34,10 +34,6 @@ export default function ManageInvoicePage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-
-  // URL for the createStripeCheckoutSession function in the "verza-backend" project
-  const CREATE_CHECKOUT_SESSION_FUNCTION_URL = "https://createstripecheckoutsession-vkwtxfkd2a-uc.a.run.app";
-
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -170,21 +166,14 @@ export default function ManageInvoicePage() {
 
     setIsProcessingPayment(true);
     try {
-      const firebaseFunctions = getFunctions(); // Initialize functions instance (used by SDK if calling functions in the same project)
-      
-      if (CREATE_CHECKOUT_SESSION_FUNCTION_URL === "YOUR_VERZA_BACKEND_CREATE_CHECKOUT_SESSION_FUNCTION_URL_HERE") {
-         toast({ title: "Configuration Error", description: "Stripe checkout function URL is still set to placeholder. Please update ManageInvoicePage.tsx.", variant: "destructive", duration: 10000 });
-         setIsProcessingPayment(false);
-         return;
-      }
-
-      const createCheckoutSession = httpsCallableFromURL(firebaseFunctions, CREATE_CHECKOUT_SESSION_FUNCTION_URL);
+      const firebaseFunctions = getFunctions(); 
+      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeCheckoutSession'); // Reverted to httpsCallable
       
       const result = await createCheckoutSession({
         contractId: contract.id,
         amount: contract.amount,
         currency: 'usd', 
-        clientEmail: contract.clientEmail || user.email, // Prefer clientEmail from contract, fallback to user's email
+        clientEmail: contract.clientEmail || user.email, 
         successUrl: `${window.location.origin}/payment-success?contractId=${contract.id}&session_id={CHECKOUT_SESSION_ID}`,
         cancelUrl: window.location.href,
       });
@@ -205,7 +194,7 @@ export default function ManageInvoicePage() {
       console.error("Payment processing error:", error);
       let description = "Could not initiate payment.";
       if (error.code === 'functions/not-found' || error.message?.includes('NOT_FOUND')) {
-        description = "Payment function not found. Ensure the backend URL is correct and the function is deployed in your 'verza-backend' project.";
+        description = "Payment function not found. Ensure 'createStripeCheckoutSession' is deployed in this Firebase project.";
       } else if (error.message) {
         description = error.message;
       }
@@ -339,5 +328,3 @@ export default function ManageInvoicePage() {
     </>
   );
 }
-
-    
