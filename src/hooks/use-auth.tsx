@@ -20,6 +20,7 @@ interface AuthContextType {
   loginWithEmailAndPassword: (email: string, password: string) => Promise<void>;
   signupWithEmailAndPassword: (email: string, password: string) => Promise<void>;
   isLoading: boolean;
+  getUserIdToken: () => Promise<string | null>; // New function to get ID token
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,15 +28,17 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [firebaseUserInstance, setFirebaseUserInstance] = useState<FirebaseUser | null>(null); // Store the actual FirebaseUser
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
-      if (firebaseUser) {
+    const unsubscribe = onAuthStateChanged(auth, (currentFirebaseUser: FirebaseUser | null) => {
+      setFirebaseUserInstance(currentFirebaseUser); // Store the full FirebaseUser
+      if (currentFirebaseUser) {
         setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          avatarUrl: firebaseUser.photoURL,
+          uid: currentFirebaseUser.uid,
+          email: currentFirebaseUser.email,
+          displayName: currentFirebaseUser.displayName,
+          avatarUrl: currentFirebaseUser.photoURL,
         });
       } else {
         setUser(null);
@@ -47,53 +50,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = async () => {
     try {
-      setIsLoading(true); // Set loading before attempting sign-in
+      setIsLoading(true);
       await signInWithPopup(auth, googleAuthProvider);
-      // onAuthStateChanged will handle setting the user and clearing loading state
     } catch (error) {
       console.error("Error signing in with Google:", error);
-      setUser(null); // Ensure user is null on error
-      setIsLoading(false); // Clear loading on error
+      setUser(null);
+      setIsLoading(false);
     }
   };
 
   const logout = async () => {
     try {
-      setIsLoading(true); // Set loading before attempting sign-out
+      setIsLoading(true);
       await signOut(auth);
       setUser(null);
-      // onAuthStateChanged will set loading to false
+      setFirebaseUserInstance(null); // Clear the firebase user instance on logout
     } catch (error) {
       console.error("Error signing out:", error);
-      setIsLoading(false); // Clear loading on error
+      setIsLoading(false);
     }
   };
 
   const loginWithEmailAndPassword = async (email: string, password: string) => {
     try {
-      setIsLoading(true); // Set loading before attempting sign-in
+      setIsLoading(true);
       await firebaseSignInWithEmailAndPassword(auth, email, password);
     } catch (error) {
       console.error("Error signing in with email and password:", error);
-      setIsLoading(false); // Clear loading on error
+      setIsLoading(false);
     }
   };
 
   const signupWithEmailAndPassword = async (email: string, password: string) => {
     try {
-      setIsLoading(true); // Set loading before attempting signup
+      setIsLoading(true);
       await createUserWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle setting the user and clearing loading state
     } catch (error) {
       console.error("Error signing up with email and password:", error);
-      setIsLoading(false); // Clear loading on error
+      setIsLoading(false);
     }
+  };
+
+  const getUserIdToken = async (): Promise<string | null> => {
+    if (firebaseUserInstance) {
+      try {
+        return await firebaseUserInstance.getIdToken(true); // forceRefresh = true
+      } catch (error) {
+        console.error("Error getting ID token:", error);
+        return null;
+      }
+    }
+    console.warn("getUserIdToken called but no Firebase user instance is available.");
+    return null;
   };
 
   const isAuthenticated = !!user;
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, user, loginWithGoogle, logout, loginWithEmailAndPassword, signupWithEmailAndPassword, isLoading }}>
+    <AuthContext.Provider value={{
+      isAuthenticated,
+      user,
+      loginWithGoogle,
+      logout,
+      loginWithEmailAndPassword,
+      signupWithEmailAndPassword,
+      isLoading,
+      getUserIdToken
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -106,4 +129,3 @@ export function useAuth() {
   }
   return context;
 }
-

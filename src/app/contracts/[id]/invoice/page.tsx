@@ -27,7 +27,7 @@ export default function ManageInvoicePage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, getUserIdToken } = useAuth();
   const { toast } = useToast();
 
   const [contract, setContract] = useState<Contract | null>(null);
@@ -170,8 +170,13 @@ export default function ManageInvoicePage() {
 
     setIsSendingInvoice(true);
     try {
-      // @ts-ignore // Firebase user object has getIdToken
-      const idToken = await user.getIdToken(true);
+      const idToken = await getUserIdToken();
+      if (!idToken) {
+        toast({ title: "Authentication Error", description: "Could not get user token. Please try again.", variant: "destructive" });
+        setIsSendingInvoice(false);
+        return;
+      }
+
       const invoiceContentToSend = generatedInvoiceHtml || contract.invoiceHtmlContent;
       
       const emailBody = {
@@ -195,7 +200,6 @@ export default function ManageInvoicePage() {
         throw new Error(errorData.error || `Failed to send email. Status: ${response.status}`);
       }
 
-      // If email sent successfully, update Firestore status
       const contractDocRef = doc(db, 'contracts', contract.id);
       await updateDoc(contractDocRef, {
         invoiceStatus: 'sent',
