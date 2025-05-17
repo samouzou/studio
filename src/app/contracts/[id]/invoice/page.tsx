@@ -20,8 +20,7 @@ import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, S
 import Link from 'next/link';
 
 const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
-// TODO: Replace with your actual deployed createPaymentIntent function URL
-const CREATE_PAYMENT_INTENT_FUNCTION_URL = "YOUR_CREATE_PAYMENT_INTENT_FUNCTION_URL_HERE";
+const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/createPaymentIntent";
 
 
 export default function ManageInvoicePage() {
@@ -246,7 +245,7 @@ export default function ManageInvoicePage() {
     }
     if (CREATE_PAYMENT_INTENT_FUNCTION_URL === "YOUR_CREATE_PAYMENT_INTENT_FUNCTION_URL_HERE") {
       toast({ title: "Configuration Error", description: "Payment intent function URL is not configured.", variant: "destructive" });
-      console.error("CREATE_PAYMENT_INTENT_FUNCTION_URL is a placeholder.");
+      console.error("CREATE_PAYMENT_INTENT_FUNCTION_URL is a placeholder and needs to be updated with your actual function URL.");
       return;
     }
 
@@ -268,8 +267,9 @@ export default function ManageInvoicePage() {
         body: JSON.stringify({
           amount: contract.amount * 100, // Stripe expects amount in cents
           currency: 'usd', // Or from contract
-          // Add contractId to the body if your createPaymentIntent function needs it
-          // and can pass it to payment_intent_data.metadata
+          // Pass contractId and userId in metadata
+          // Ensure your backend `createPaymentIntent` function expects and uses this metadata
+          // to pass it to Stripe's paymentIntent.create metadata.
           metadata: { 
             contractId: contract.id,
             userId: user.uid,
@@ -291,27 +291,39 @@ export default function ManageInvoicePage() {
       console.log("Received clientSecret:", clientSecret);
       toast({ 
         title: "Payment Intent Created", 
-        description: "Next step: Integrate Stripe Elements to confirm payment with this clientSecret.",
+        description: "Next step: Integrate Stripe Elements to collect payment details and confirm payment with this clientSecret.",
         duration: 9000,
       });
 
-      // TODO: Integrate Stripe Elements here.
-      // The following redirectToCheckout logic is for Stripe Checkout Sessions and will NOT work with Payment Intents.
-      // It's commented out to prevent errors. You'll need to replace this with logic
-      // to mount Stripe Elements (e.g., PaymentElement or CardElement) and then call
-      // stripe.confirmPayment() or stripe.confirmCardPayment().
+      // TODO: Implement Stripe Elements UI and payment confirmation
+      // 1. Initialize Stripe with your publishable key (already done via loadStripe)
+      // 2. Create an instance of Elements.
+      // 3. Create and mount a PaymentElement (or CardElement) to your DOM.
+      // 4. When the user submits their payment details:
+      //    - Call `stripe.confirmPayment()` (for PaymentElement) or
+      //      `stripe.confirmCardPayment()` (for CardElement) with the `elements` instance
+      //      and the `clientSecret`.
+      //    - Handle the result (success or error).
 
       /*
+      // Example (conceptual) - this part needs full Stripe Elements integration
       const stripe = await loadStripe(stripePublishableKey);
       if (stripe) {
-        // This is for Stripe Checkout, not Payment Intents.
-        // const { error } = await stripe.redirectToCheckout({ sessionId }); // 'sessionId' is from createStripeCheckoutSession
+        // This is where you would use Stripe Elements to confirm the payment with the clientSecret
+        // For example, if using PaymentElement:
+        // const {error} = await stripe.confirmPayment({
+        //   elements, // an instance of Stripe Elements
+        //   clientSecret,
+        //   confirmParams: {
+        //     return_url: `${window.location.origin}/payment-success?contractId=${contract.id}`,
+        //   },
+        // });
         // if (error) {
-        //   console.error("Stripe redirection error:", error);
-        //   toast({ title: "Payment Error", description: error.message || "Failed to redirect to Stripe.", variant: "destructive" });
+        //   toast({ title: "Payment Error", description: error.message || "Failed to confirm payment.", variant: "destructive" });
+        // } else {
+        //   // Payment successful or processing, user will be redirected by return_url if set.
         // }
         toast({title: "Next Step Required", description: "Implement Stripe Elements to use clientSecret for payment.", variant: "default", duration: 10000});
-
       } else {
         throw new Error("Stripe.js failed to load.");
       }
@@ -465,6 +477,8 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+    
+
     
 
     
