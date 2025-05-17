@@ -12,14 +12,14 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { db, collection, query, where, onSnapshot, orderBy as firestoreOrderBy, Timestamp } from '@/lib/firebase';
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/hooks/use-toast"; // Added useToast
+import { useToast } from "@/hooks/use-toast";
 
 export default function ContractsPage() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [isLoadingContracts, setIsLoadingContracts] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const { user, isLoading: authLoading } = useAuth();
-  const { toast } = useToast(); // Initialized toast
+  const { toast } = useToast();
 
   useEffect(() => {
     if (user && user.uid && !authLoading) {
@@ -41,7 +41,6 @@ export default function ContractsPage() {
           } else if (data.createdAt && typeof data.createdAt.seconds === 'number' && typeof data.createdAt.nanoseconds === 'number') {
             createdAtTimestamp = new Timestamp(data.createdAt.seconds, data.createdAt.nanoseconds);
           } else {
-            // Fallback or error, though orderBy should ensure it exists and is a Timestamp
             console.warn("Contract createdAt field was not a valid Timestamp, using current time as fallback. Document ID:", docSnap.id);
             createdAtTimestamp = Timestamp.now(); 
           }
@@ -51,14 +50,36 @@ export default function ContractsPage() {
             updatedAtTimestamp = data.updatedAt;
           } else if (data.updatedAt && typeof data.updatedAt.seconds === 'number' && typeof data.updatedAt.nanoseconds === 'number') {
              updatedAtTimestamp = new Timestamp(data.updatedAt.seconds, data.updatedAt.nanoseconds);
+          } else if (typeof data.updatedAt === 'string') {
+             updatedAtTimestamp = Timestamp.fromDate(new Date(data.updatedAt));
           }
-          // If data.updatedAt is undefined, updatedAtTimestamp remains undefined, matching Contract type.
+
+          // Calculate effective display status
+          let effectiveDisplayStatus: Contract['status'] = data.status;
+          const invoiceStatus = data.invoiceStatus || 'none';
+          const mainStatus = data.status;
+          const dueDate = data.dueDate;
+          const todayMidnight = new Date(new Date().setHours(0,0,0,0));
+          const contractDueDate = dueDate ? new Date(dueDate + 'T00:00:00') : null;
+
+          if (invoiceStatus === 'paid') {
+              effectiveDisplayStatus = 'paid';
+          } else if (mainStatus !== 'paid') {
+              if (mainStatus === 'overdue' || invoiceStatus === 'overdue' || (contractDueDate && contractDueDate < todayMidnight && (invoiceStatus === 'sent' || invoiceStatus === 'viewed'))) {
+                  effectiveDisplayStatus = 'overdue';
+              } else if (mainStatus === 'pending' && (invoiceStatus === 'sent' || invoiceStatus === 'viewed')) {
+                  effectiveDisplayStatus = 'invoiced';
+              }
+          }
+
 
           return {
             id: docSnap.id,
             ...data,
             createdAt: createdAtTimestamp, 
             updatedAt: updatedAtTimestamp,
+            status: effectiveDisplayStatus, // Overwrite status with effective status for display
+            invoiceStatus: invoiceStatus, // ensure invoiceStatus is part of the returned object
           } as Contract;
         });
         setContracts(contractList);
@@ -136,3 +157,4 @@ export default function ContractsPage() {
     </>
   );
 }
+

@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react"; // Added useCallback
+import { useEffect, useState, useMemo, useCallback } from "react";
 import type { DateRange } from "react-day-picker";
 import { PageHeader } from "@/components/page-header";
 import { EarningsChart } from "@/components/dashboard/earnings-chart";
@@ -9,7 +9,7 @@ import { AtRiskPayments } from "@/components/dashboard/at-risk-payments";
 import { UpcomingIncomeList } from "@/components/dashboard/upcoming-income";
 import { DashboardFilters, type DashboardFilterState } from "@/components/dashboard/dashboard-filters";
 import { SummaryCard } from "@/components/dashboard/summary-card";
-import { DollarSign, FileText, AlertCircle, CalendarCheck, Loader2, AlertTriangle } from "lucide-react";
+import { DollarSign, FileText, AlertCircle, CalendarCheck, Loader2, AlertTriangle, FileSpreadsheet, CheckCircle as CheckCircleIcon } from "lucide-react"; // Renamed CheckCircle to avoid conflict
 import { useAuth } from "@/hooks/use-auth";
 import { db, collection, query, where, getDocs, Timestamp } from '@/lib/firebase';
 import type { Contract, EarningsDataPoint, UpcomingIncome, AtRiskPayment } from "@/types";
@@ -32,6 +32,8 @@ interface DashboardStats {
   upcomingIncomeList: UpcomingIncome[];
   atRiskPaymentsList: AtRiskPayment[];
   earningsChartData: EarningsDataPoint[];
+  totalInvoicedThisMonth: number;
+  totalCollectedThisMonth: number;
 }
 
 const initialFilterState: DashboardFilterState = {
@@ -50,7 +52,6 @@ export default function DashboardPage() {
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availableProjects, setAvailableProjects] = useState<string[]>([]);
 
-  // Fetch all contracts for the user once
   useEffect(() => {
     if (user && !authLoading) {
       setIsLoadingData(true);
@@ -75,7 +76,7 @@ export default function DashboardPage() {
             if (updatedAt && !(updatedAt instanceof Timestamp)) {
               if (updatedAt.seconds && typeof updatedAt.seconds === 'number') {
                 updatedAt = new Timestamp(updatedAt.seconds, updatedAt.nanoseconds || 0);
-              } else if (typeof updatedAt === 'string') { // Handle string dates
+              } else if (typeof updatedAt === 'string') { 
                 updatedAt = Timestamp.fromDate(new Date(updatedAt));
               }
             }
@@ -84,7 +85,8 @@ export default function DashboardPage() {
               id: docSnap.id, 
               ...data,
               createdAt: createdAt,
-              updatedAt: updatedAt, // Will be Timestamp or undefined
+              updatedAt: updatedAt,
+              invoiceStatus: data.invoiceStatus || 'none',
             } as Contract;
           });
           setAllContracts(fetchedContracts);
@@ -112,7 +114,6 @@ export default function DashboardPage() {
     }
   }, [user, authLoading]);
 
-  // Calculate stats whenever allContracts or filters change
   useEffect(() => {
     if (isLoadingData || !user) return;
 
@@ -139,71 +140,95 @@ export default function DashboardPage() {
     const today = new Date();
     const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const sevenDaysFromTodayMidnight = addDays(todayMidnight, 7);
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
 
     const upcomingIncomeSource: UpcomingIncome[] = [];
-    const atRiskPaymentsList: AtRiskPayment[] = [];
-    let totalPendingIncome = 0;
-    let paidThisMonthAmount = 0;
-    let currentTotalOverdueCount = 0;
+    const atRiskPaymentsListSource: AtRiskPayment[] = [];
+    let totalPendingIncomeCalc = 0;
+    let paidThisMonthAmountCalc = 0;
+    let currentTotalOverdueCountCalc = 0;
+    let totalInvoicedThisMonthCalc = 0;
+
 
     filteredContracts.forEach(c => {
-      if (!c.dueDate) return; 
-      const contractDueDate = new Date(c.dueDate + 'T00:00:00'); 
+      const contractDueDate = c.dueDate ? new Date(c.dueDate + 'T00:00:00') : null;
+      const mainStatus = c.status;
+      const invoiceStatus = c.invoiceStatus || 'none';
+      
+      // Determine effective status for risk assessment
+      let effectiveStatusForRisk: Contract['status'] = mainStatus;
+      let isActuallyOverdue = false;
 
-      // Pending Income (based on contract status and future due date)
-      if ((c.status === 'pending' || c.status === 'invoiced') && contractDueDate >= todayMidnight) {
-        upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
-        totalPendingIncome += c.amount;
-      }
-
-      // Paid This Month (based on invoiceStatus being 'paid' and updatedAt timestamp)
-      if (c.invoiceStatus === 'paid' && c.updatedAt instanceof Timestamp) {
-        const paymentDate = c.updatedAt.toDate();
-        if (paymentDate.getMonth() === today.getMonth() && 
-            paymentDate.getFullYear() === today.getFullYear()) {
-          paidThisMonthAmount += c.amount;
+      if (invoiceStatus === 'paid') {
+        effectiveStatusForRisk = 'paid';
+      } else { // Not paid via invoice
+        if (mainStatus === 'overdue' || invoiceStatus === 'overdue') {
+          effectiveStatusForRisk = 'overdue';
+          isActuallyOverdue = true;
+        } else if (contractDueDate && contractDueDate < todayMidnight && (invoiceStatus === 'sent' || invoiceStatus === 'viewed')) {
+          effectiveStatusForRisk = 'overdue';
+          isActuallyOverdue = true;
+        } else if (mainStatus === 'pending' && (invoiceStatus === 'sent' || invoiceStatus === 'viewed')) {
+          effectiveStatusForRisk = 'invoiced';
         }
+      }
+      
+      if (isActuallyOverdue) {
+        currentTotalOverdueCountCalc++;
       }
 
       // At Risk Payments
-      let isAtRisk = false;
-      let riskReason = "";
-      let effectiveStatus = c.status; // Start with overall contract status
-
-      // Consider invoice status for overdue calculation if contract itself isn't marked overdue
-      // If invoice is sent/viewed and past due, it's at risk.
-      if ((c.invoiceStatus === 'sent' || c.invoiceStatus === 'viewed' || c.invoiceStatus === 'overdue') && contractDueDate < todayMidnight) {
-        isAtRisk = true;
-        riskReason = 'Payment overdue';
-        effectiveStatus = 'overdue'; 
-      } else if (c.status === 'overdue') { // If contract status is already overdue
-        isAtRisk = true;
-        riskReason = 'Payment overdue (contract status)';
-        effectiveStatus = 'overdue';
-      } else if ((c.status === 'pending' || c.status === 'invoiced' || c.invoiceStatus === 'sent' || c.invoiceStatus === 'viewed') && contractDueDate < sevenDaysFromTodayMidnight) { 
-        isAtRisk = true;
-        riskReason = 'Due soon';
-      }
-      
-      if (effectiveStatus === 'overdue') {
-        currentTotalOverdueCount++;
-      }
-
-      if (isAtRisk) {
-        atRiskPaymentsList.push({
-          id: c.id,
-          brand: c.brand,
-          amount: c.amount,
-          dueDate: c.dueDate,
-          status: effectiveStatus, // Use the derived effective status
-          riskReason: riskReason,
+      if (isActuallyOverdue) {
+        atRiskPaymentsListSource.push({
+          id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate,
+          status: 'overdue', riskReason: 'Payment overdue', projectName: c.projectName,
+        });
+      } else if (effectiveStatusForRisk !== 'paid' && contractDueDate && contractDueDate < sevenDaysFromTodayMidnight) {
+         atRiskPaymentsListSource.push({
+          id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate,
+          status: effectiveStatusForRisk, 
+          riskReason: contractDueDate < todayMidnight ? 'Payment overdue' : 'Due soon', 
           projectName: c.projectName,
         });
       }
+
+      // Pending Income & Upcoming Income List
+      if (contractDueDate && contractDueDate >= todayMidnight && 
+          (effectiveStatusForRisk === 'pending' || effectiveStatusForRisk === 'invoiced')) {
+        upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
+        totalPendingIncomeCalc += c.amount;
+      }
+
+      // Paid This Month (Collected This Month)
+      if (invoiceStatus === 'paid' && c.updatedAt instanceof Timestamp) {
+        const paymentDate = c.updatedAt.toDate();
+        if (paymentDate.getMonth() === currentMonth && paymentDate.getFullYear() === currentYear) {
+          paidThisMonthAmountCalc += c.amount;
+        }
+      }
+
+      // Total Invoiced This Month
+      // Assuming invoice is "created" or "sent" in current month based on 'updatedAt'
+      // This might need a dedicated 'invoiceGeneratedAt' or 'invoiceSentAt' field for more accuracy
+      if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed' || invoiceStatus === 'draft' || invoiceStatus === 'overdue' || invoiceStatus === 'paid') && c.updatedAt instanceof Timestamp) {
+        const invoiceActionDate = c.updatedAt.toDate(); 
+        if (invoiceActionDate.getMonth() === currentMonth && invoiceActionDate.getFullYear() === currentYear) {
+            totalInvoicedThisMonthCalc += c.amount;
+        }
+      } else if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed' || invoiceStatus === 'draft' || invoiceStatus === 'overdue' || invoiceStatus === 'paid') && c.createdAt instanceof Timestamp) {
+        // Fallback to createdAt if updatedAt isn't set yet for an invoiced item
+        const invoiceCreationDate = c.createdAt.toDate();
+        if (invoiceCreationDate.getMonth() === currentMonth && invoiceCreationDate.getFullYear() === currentYear) {
+            totalInvoicedThisMonthCalc += c.amount;
+        }
+      }
+
+
     });
     
     upcomingIncomeSource.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-    atRiskPaymentsList.sort((a, b) => {
+    atRiskPaymentsListSource.sort((a, b) => {
       const aIsOverdue = a.status === 'overdue';
       const bIsOverdue = b.status === 'overdue';
       if (aIsOverdue && !bIsOverdue) return -1;
@@ -212,22 +237,24 @@ export default function DashboardPage() {
     });
 
     setStats({
-      totalPendingIncome,
+      totalPendingIncome: totalPendingIncomeCalc,
       upcomingIncomeCount: upcomingIncomeSource.length,
       totalContractsCount: allContracts.length, // Using all contracts before filtering for this stat
-      atRiskPaymentsCount: atRiskPaymentsList.length,
-      totalOverdueCount: currentTotalOverdueCount,
-      paidThisMonthAmount,
+      atRiskPaymentsCount: atRiskPaymentsListSource.length,
+      totalOverdueCount: currentTotalOverdueCountCalc,
+      paidThisMonthAmount: paidThisMonthAmountCalc, // This is effectively "collected this month"
       upcomingIncomeList: upcomingIncomeSource,
-      atRiskPaymentsList: atRiskPaymentsList,
+      atRiskPaymentsList: atRiskPaymentsListSource,
       earningsChartData: MOCK_EARNINGS_DATA, 
+      totalInvoicedThisMonth: totalInvoicedThisMonthCalc,
+      totalCollectedThisMonth: paidThisMonthAmountCalc,
     });
 
   }, [allContracts, filters, user, isLoadingData]);
 
   const handleFiltersChange = useCallback((newFilters: DashboardFilterState) => {
     setFilters(newFilters);
-  }, []); // setFilters is stable, so empty dependency array is okay.
+  }, []);
 
   if (authLoading || (isLoadingData && user)) {
     return (
@@ -242,8 +269,8 @@ export default function DashboardPage() {
           onFiltersChange={handleFiltersChange}
           initialFilters={initialFilterState} 
         />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
-          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 mb-6">
+          {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
         </div>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
@@ -279,7 +306,7 @@ export default function DashboardPage() {
     );
   }
   
-  if (!stats) return null;
+  if (!stats) return null; // Should be covered by above, but good for type safety
 
   return (
     <>
@@ -295,7 +322,7 @@ export default function DashboardPage() {
         initialFilters={filters}
       />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 mb-6">
         <SummaryCard 
           title="Pending Income (Filtered)" 
           value={`$${stats.totalPendingIncome.toLocaleString()}`}
@@ -316,9 +343,15 @@ export default function DashboardPage() {
           className={stats.atRiskPaymentsCount > 0 ? "border-destructive text-destructive dark:border-destructive/70" : ""}
         />
          <SummaryCard 
-          title="Paid This Month (Filtered)" 
-          value={`$${stats.paidThisMonthAmount.toLocaleString()}`}
-          icon={CalendarCheck}
+          title="Invoiced This Month (Filtered)" 
+          value={`$${stats.totalInvoicedThisMonth.toLocaleString()}`}
+          icon={FileSpreadsheet}
+          description="Based on invoices updated this month"
+        />
+        <SummaryCard 
+          title="Collected This Month (Filtered)" 
+          value={`$${stats.totalCollectedThisMonth.toLocaleString()}`}
+          icon={CheckCircleIcon} // Use the renamed CheckCircleIcon
           description="Based on invoices marked 'paid' this month"
         />
       </div>
@@ -338,5 +371,3 @@ export default function DashboardPage() {
     </>
   );
 }
-
-    
