@@ -50,13 +50,13 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
   if (!firebaseUser) return;
   const userDocRef = doc(db, 'users', firebaseUser.uid);
   
-  // Check if document already exists to prevent overwriting subscription data on every login
   const userDocSnap = await getDoc(userDocRef);
 
   if (!userDocSnap.exists()) {
+    // Destructure for new user document creation
     const { uid, email, displayName, photoURL } = firebaseUser;
     const createdAt = Timestamp.now();
-    const trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds); // 7 days from now
+    const trialEndsAtTimestamp = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds); // 7 days from now
 
     try {
       await setDoc(userDocRef, {
@@ -69,7 +69,7 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
         stripeCustomerId: null,
         stripeSubscriptionId: null,
         subscriptionStatus: 'trialing',
-        trialEndsAt: trialEndsAt,
+        trialEndsAt: trialEndsAtTimestamp,
         subscriptionEndsAt: null,
         trialExtensionUsed: false,
       });
@@ -78,23 +78,29 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
       console.error("Error creating user document in Firestore:", error);
     }
   } else {
-    // Optionally, update fields like avatarUrl or displayName if they might change via provider
+    // For existing user, access properties directly from firebaseUser object
     const existingData = userDocSnap.data();
     const updates: Partial<UserProfile> = {};
-    if (photoURL && existingData.avatarUrl !== photoURL) {
-      updates.avatarUrl = photoURL;
+    
+    if (firebaseUser.photoURL && existingData.avatarUrl !== firebaseUser.photoURL) {
+      updates.avatarUrl = firebaseUser.photoURL;
     }
-    if (displayName && existingData.displayName !== displayName) {
-      updates.displayName = displayName;
+    if (firebaseUser.displayName && existingData.displayName !== firebaseUser.displayName) {
+      updates.displayName = firebaseUser.displayName;
     }
     // Ensure essential subscription fields are present if somehow missing (migration for old users)
     if (existingData.subscriptionStatus === undefined) updates.subscriptionStatus = 'none';
-    if (existingData.trialEndsAt === undefined) updates.trialEndsAt = null; // or set a default past date
+    if (existingData.trialEndsAt === undefined && existingData.subscriptionStatus !== 'active') { // Only set default trial if not already active
+        const createdAt = existingData.createdAt instanceof Timestamp ? existingData.createdAt : Timestamp.now();
+        updates.trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds); 
+        if (updates.subscriptionStatus === 'none') updates.subscriptionStatus = 'trialing';
+    }
+
 
     if (Object.keys(updates).length > 0) {
       try {
         await setDoc(userDocRef, updates, { merge: true });
-        console.log("User document updated for UID:", firebaseUser.uid);
+        console.log("User document updated for UID:", firebaseUser.uid, "with updates:", updates);
       } catch (error) {
         console.error("Error updating user document:", error);
       }
@@ -111,10 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (currentFirebaseUser: FirebaseUser | null) => {
       setFirebaseUserInstance(currentFirebaseUser);
       if (currentFirebaseUser) {
-        // Ensure user document is created/updated with subscription fields
         await createUserDocument(currentFirebaseUser); 
         
-        // Fetch the full user profile from Firestore including subscription details
         const userDocRef = doc(db, 'users', currentFirebaseUser.uid);
         const userDocSnap = await getDoc(userDocRef);
 
@@ -123,9 +127,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser({
             uid: currentFirebaseUser.uid,
             email: currentFirebaseUser.email,
-            displayName: currentFirebaseUser.displayName || firestoreUserData.displayName,
-            avatarUrl: currentFirebaseUser.photoURL || firestoreUserData.avatarUrl,
-            // Subscription fields from Firestore
+            displayName: firestoreUserData.displayName || currentFirebaseUser.displayName, // Prioritize Firestore, then Auth
+            avatarUrl: firestoreUserData.avatarUrl || currentFirebaseUser.photoURL,       // Prioritize Firestore, then Auth
             stripeCustomerId: firestoreUserData.stripeCustomerId || null,
             stripeSubscriptionId: firestoreUserData.stripeSubscriptionId || null,
             subscriptionStatus: firestoreUserData.subscriptionStatus || 'none',
@@ -134,13 +137,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             trialExtensionUsed: firestoreUserData.trialExtensionUsed || false,
           });
         } else {
-          // This case should ideally not happen if createUserDocument works correctly
+           // This case should ideally not happen if createUserDocument works correctly,
+           // but as a fallback:
+           console.warn(`User document for ${currentFirebaseUser.uid} not found after createUserDocument call. Setting basic user profile.`);
            setUser({
             uid: currentFirebaseUser.uid,
             email: currentFirebaseUser.email,
             displayName: currentFirebaseUser.displayName,
             avatarUrl: currentFirebaseUser.photoURL,
-            subscriptionStatus: 'none', // Fallback
+            subscriptionStatus: 'none', 
+            trialEndsAt: null, 
+            trialExtensionUsed: false,
           });
         }
       } else {
@@ -154,8 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = async () => {
     try {
       setIsLoading(true);
-      const result = await signInWithPopup(auth, googleAuthProvider);
-      // onAuthStateChanged will handle user document creation and state update
+      await signInWithPopup(auth, googleAuthProvider);
     } catch (error) {
       console.error("Error signing in with Google:", error);
       setUser(null); 
@@ -178,7 +184,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await firebaseSignInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle user document creation and state update
     } catch (error: any) {
       console.error("Error signing in with email and password:", error);
       toast({ title: "Login Failed", description: error.message || "Invalid email or password.", variant: "destructive"});
@@ -190,7 +195,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await createUserWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle user document creation and state update
     } catch (error: any) {
       console.error("Error signing up with email and password:", error);
       toast({ title: "Signup Failed", description: error.message || "Could not create account.", variant: "destructive"});
@@ -201,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getUserIdToken = async (): Promise<string | null> => {
     if (firebaseUserInstance) {
       try {
-        return await firebaseUserInstance.getIdToken(true);
+        return await firebaseUserInstance.getIdToken(true); // Force refresh
       } catch (error) {
         console.error("Error getting ID token:", error);
         return null;
@@ -239,4 +243,5 @@ export function useAuth() {
 
 // Helper for toast - assuming useToast is available globally or imported elsewhere
 // This is a simplified version, in a real app, you'd import useToast
-declare function toast(options: { title: string; description: string; variant?: "default" | "destructive" }): void;
+declare function toast(options: { title: string; description: string; variant?: "default" | "destructive"; duration?: number }): void;
+
