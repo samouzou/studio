@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, CreditCard, Settings2, CheckCircle, XCircle, CalendarClock, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
+import { loadStripe } from '@stripe/stripe-js'; // Import loadStripe
 
 export function SubscriptionCard() {
   const { user } = useAuth();
@@ -23,19 +24,35 @@ export function SubscriptionCard() {
   const handleSubscribe = async () => {
     setIsProcessingCheckout(true);
     try {
-      // Ensure functions is initialized if you are calling functions from the same project
-      const firebaseFunctions = functions; // from '@/lib/firebase'
-      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeSubscriptionCheckoutSession');
-      const result = await createCheckoutSession();
+      const firebaseFunctions = functions; 
+      const createCheckoutSessionCallable = httpsCallable(firebaseFunctions, 'createStripeSubscriptionCheckoutSession');
+      const result = await createCheckoutSessionCallable();
       const { sessionId } = result.data as { sessionId: string };
       
-      if (sessionId && (window as any).Stripe) {
-         const stripe = (window as any).Stripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-         await stripe.redirectToCheckout({ sessionId });
-      } else if (sessionId) {
-        window.location.href = sessionId; 
-      } else {
+      if (!sessionId) {
         throw new Error("Could not retrieve a valid session ID from Stripe.");
+      }
+
+      if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
+        console.error("Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is missing.");
+        toast({ title: "Stripe Error", description: "Stripe publishable key is not configured.", variant: "destructive", duration: 9000 });
+        setIsProcessingCheckout(false);
+        return;
+      }
+      
+      const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+
+      if (stripe) {
+         await stripe.redirectToCheckout({ sessionId });
+         // redirectToCheckout should not resolve if successful, as it navigates away.
+         // If it resolves, it's usually an error.
+      } else {
+        console.error("Stripe.js failed to load.");
+        toast({
+          title: "Subscription Error",
+          description: "Could not connect to Stripe. Please try again later.",
+          variant: "destructive",
+        });
       }
     } catch (error: any) {
       console.error("Error creating Stripe subscription checkout session:", error);
@@ -45,6 +62,7 @@ export function SubscriptionCard() {
         variant: "destructive",
       });
     } finally {
+      // This might not be reached if redirectToCheckout navigates away successfully
       setIsProcessingCheckout(false);
     }
   };
@@ -56,9 +74,9 @@ export function SubscriptionCard() {
     }
     setIsProcessingPortal(true);
     try {
-      const firebaseFunctions = functions; // from '@/lib/firebase'
-      const createPortalSession = httpsCallable(firebaseFunctions, 'createStripeCustomerPortalSession');
-      const result = await createPortalSession(); // No data needs to be passed if backend gets UID from context.auth
+      const firebaseFunctions = functions; 
+      const createPortalSessionCallable = httpsCallable(firebaseFunctions, 'createStripeCustomerPortalSession');
+      const result = await createPortalSessionCallable(); 
       const { url } = result.data as { url: string };
       if (url) {
         window.location.href = url;
@@ -112,13 +130,13 @@ export function SubscriptionCard() {
   const canSubscribe = !user.stripeCustomerId || 
                        user.subscriptionStatus === 'none' || 
                        user.subscriptionStatus === 'canceled' ||
-                       (user.subscriptionStatus === 'trialing'); // Allow subscribing even during trial
+                       (user.subscriptionStatus === 'trialing'); 
 
   const canManage = !!user.stripeCustomerId && 
                     (user.subscriptionStatus === 'active' || 
                      user.subscriptionStatus === 'past_due' || 
                      user.subscriptionStatus === 'trialing' ||
-                     user.subscriptionStatus === 'canceled'); // Can manage even if canceled to see history/reactivate
+                     user.subscriptionStatus === 'canceled'); 
 
   return (
     <Card className="shadow-lg">
@@ -216,4 +234,3 @@ export function SubscriptionCard() {
     </Card>
   );
 }
-
