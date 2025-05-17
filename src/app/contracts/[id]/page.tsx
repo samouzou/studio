@@ -28,7 +28,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Badge } from '@/components/ui/badge'; // Added for invoice status
+import { Badge } from '@/components/ui/badge';
 
 function DetailItem({ icon: Icon, label, value, valueClassName }: { icon: React.ElementType, label: string, value: React.ReactNode, valueClassName?: string }) {
   return (
@@ -96,7 +96,6 @@ export default function ContractDetailPage() {
               ...data,
               createdAt: createdAt,
               updatedAt: updatedAt,
-              // Ensure invoiceStatus has a default if not present
               invoiceStatus: data.invoiceStatus || 'none',
             } as Contract);
           } else {
@@ -198,10 +197,23 @@ export default function ContractDetailPage() {
                                     contract.negotiationSuggestions.ipRights ||
                                     (contract.negotiationSuggestions.generalSuggestions && contract.negotiationSuggestions.generalSuggestions.length > 0));
 
+  let effectiveDisplayStatus: Contract['status'] = contract.status;
+  if (contract.invoiceStatus === 'paid') {
+      effectiveDisplayStatus = 'paid';
+  } else if (contract.status !== 'paid') { // Only override if contract itself isn't already marked as paid
+      if (contract.invoiceStatus === 'overdue') {
+          effectiveDisplayStatus = 'overdue';
+      } else if (contract.invoiceStatus === 'sent' || contract.invoiceStatus === 'viewed') {
+          if (contract.status === 'pending') {
+             effectiveDisplayStatus = 'invoiced';
+          }
+      }
+  }
+
   return (
     <>
       <PageHeader
-        title={(contract.brand || "Contract") + " - " + (contract.fileName || "Details")}
+        title={(contract.brand || "Contract") + " - " + (contract.projectName || contract.fileName || "Details")}
         description={`Details for contract ID: ${contract.id}`}
         actions={
           <div className="flex gap-2 flex-wrap">
@@ -250,7 +262,7 @@ export default function ContractDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>Key Information</span>
-                <ContractStatusBadge status={contract.status} />
+                <ContractStatusBadge status={effectiveDisplayStatus} />
               </CardTitle>
               <CardDescription>Core details of the agreement with {contract.brand}.</CardDescription>
             </CardHeader>
@@ -387,3 +399,5 @@ export default function ContractDetailPage() {
     </>
   );
 }
+
+    
