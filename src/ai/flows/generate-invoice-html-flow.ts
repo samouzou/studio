@@ -13,7 +13,7 @@ import {z} from 'genkit';
 import type { Contract } from '@/types'; // Assuming Contract type has relevant fields
 
 const GenerateInvoiceHtmlInputSchema = z.object({
-  // Creator's details (placeholders for now)
+  // Creator's details
   creatorName: z.string().optional().default("Your Company/Name"),
   creatorAddress: z.string().optional().default("123 Creator Lane, Suite 100, Creative City, CC 12345"),
   creatorEmail: z.string().optional().default("you@example.com"),
@@ -34,6 +34,7 @@ const GenerateInvoiceHtmlInputSchema = z.object({
   deliverables: z.array(z.object({ description: z.string(), quantity: z.number().default(1), unitPrice: z.number(), total: z.number() })).describe("List of services or deliverables with pricing."),
   totalAmount: z.number().describe("The total amount due for this invoice."),
   paymentInstructions: z.string().optional().describe("Instructions for how the client should make the payment (e.g., bank details, PayPal)."),
+  payInvoiceLink: z.string().optional().describe("The fully qualified URL that the 'Pay Now' button in the invoice should point to. If provided, include a prominent 'Pay Now' button."),
 });
 export type GenerateInvoiceHtmlInput = z.infer<typeof GenerateInvoiceHtmlInputSchema>;
 
@@ -46,7 +47,6 @@ export async function generateInvoiceHtml(input: GenerateInvoiceHtmlInput): Prom
   return generateInvoiceHtmlFlow(input);
 }
 
-// Simplified prompt focusing on HTML structure and placeholders
 const prompt = ai.definePrompt({
   name: 'generateInvoiceHtmlPrompt',
   input: {schema: GenerateInvoiceHtmlInputSchema},
@@ -80,10 +80,17 @@ const prompt = ai.definePrompt({
 
   Total Amount Due: \${{{totalAmount}}}
 
+  {{#if payInvoiceLink}}
+  Payment Link (for Pay Now button): {{{payInvoiceLink}}}
+  {{/if}}
+
   Payment Instructions:
   {{{paymentInstructions}}}
 
-  Please structure this as a clean HTML page. Example structure:
+  Please structure this as a clean HTML page. Include a prominent "Pay Now" button if a 'Payment Link' is provided above.
+  Style the "Pay Now" button to be noticeable, for example, with a background color and padding.
+
+  Example structure:
   <!DOCTYPE html>
   <html>
   <head>
@@ -91,7 +98,7 @@ const prompt = ai.definePrompt({
     <style>
       body { font-family: sans-serif; margin: 20px; color: #333; }
       .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; box-shadow: 0 0 10px rgba(0, 0, 0, .15); font-size: 16px; line-height: 24px; }
-      .header, .client-details, .items-table, .totals, .payment-instructions { margin-bottom: 20px; }
+      .header, .client-details, .items-table, .totals, .payment-instructions, .pay-now-section { margin-bottom: 20px; }
       .header table { width: 100%; }
       .header table td { padding: 5px; vertical-align: top; }
       .header .invoice-details { text-align: right; }
@@ -100,6 +107,7 @@ const prompt = ai.definePrompt({
       .items-table table th { background-color: #f2f2f2; }
       .text-right { text-align: right; }
       .bold { font-weight: bold; }
+      .pay-now-button { display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-size: 16px; text-align: center;}
     </style>
   </head>
   <body>
@@ -108,6 +116,11 @@ const prompt = ai.definePrompt({
       <!-- Client Details Section -->
       <!-- Items Table Section -->
       <!-- Totals Section -->
+      {{#if payInvoiceLink}}
+      <div class="pay-now-section" style="text-align: center; margin-top: 30px;">
+        <a href="{{{payInvoiceLink}}}" class="pay-now-button">Pay Now</a>
+      </div>
+      {{/if}}
       <!-- Payment Instructions Section -->
       <!-- Footer (Optional: Thank you note) -->
     </div>
@@ -127,3 +140,4 @@ const generateInvoiceHtmlFlow = ai.defineFlow(
     return output!;
   }
 );
+

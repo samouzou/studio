@@ -19,7 +19,6 @@ import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/g
 import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react';
 import Link from 'next/link';
 
-// const CREATE_CHECKOUT_SESSION_FUNCTION_URL = "https://createstripecheckoutsession-vkwtxfkd2a-uc.a.run.app"; // Replaced by same-project function
 const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
 
 
@@ -39,6 +38,8 @@ export default function ManageInvoicePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isSendingInvoice, setIsSendingInvoice] = useState(false);
+  const [payUrl, setPayUrl] = useState<string>("");
+
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -55,6 +56,10 @@ export default function ManageInvoicePage() {
             }
             setInvoiceNumber(data.invoiceNumber || `INV-${data.brand?.substring(0,3).toUpperCase() || 'AAA'}-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${id.substring(0,4).toUpperCase()}`);
             setInvoiceStatus(data.invoiceStatus || 'none');
+             // Set payUrl here after contract and invoiceNumber are available
+            if (typeof window !== 'undefined') {
+              setPayUrl(`${window.location.origin}/pay/contract/${id}`);
+            }
           } else {
             toast({ title: "Error", description: "Contract not found or access denied.", variant: "destructive" });
             router.push('/contracts');
@@ -71,9 +76,21 @@ export default function ManageInvoicePage() {
       router.push('/login');
     }
   }, [id, user, authLoading, router, toast]);
+  
+  // Effect to update payUrl if invoiceNumber changes (e.g. user edits it)
+  // Or if 'id' changes (though less likely for this page)
+  useEffect(() => {
+    if (id && typeof window !== 'undefined') {
+      setPayUrl(`${window.location.origin}/pay/contract/${id}`);
+    }
+  }, [id, invoiceNumber]);
+
 
   const handleGenerateInvoice = async () => {
-    if (!contract || !user) return;
+    if (!contract || !user || !invoiceNumber) {
+        toast({ title: "Cannot Generate", description: "Contract details or invoice number missing.", variant: "destructive" });
+        return;
+    }
     setIsGenerating(true);
     try {
       const deliverablesForAI = contract.extractedTerms?.deliverables?.map((desc) => ({
@@ -82,6 +99,9 @@ export default function ManageInvoicePage() {
         unitPrice: contract.extractedTerms?.deliverables && contract.extractedTerms.deliverables.length > 0 ? contract.amount / contract.extractedTerms.deliverables.length : contract.amount,
         total: contract.extractedTerms?.deliverables && contract.extractedTerms.deliverables.length > 0 ? contract.amount / contract.extractedTerms.deliverables.length : contract.amount,
       })) || [{ description: contract.projectName || `Services for ${contract.brand}`, quantity: 1, unitPrice: contract.amount, total: contract.amount }];
+
+      const currentPayUrl = typeof window !== 'undefined' ? `${window.location.origin}/pay/contract/${id}` : "";
+
 
       const input: GenerateInvoiceHtmlInput = {
         creatorName: user.displayName || "Your Name/Company",
@@ -98,6 +118,7 @@ export default function ManageInvoicePage() {
         deliverables: deliverablesForAI,
         totalAmount: contract.amount,
         paymentInstructions: contract.paymentInstructions,
+        payInvoiceLink: currentPayUrl,
       };
       const result = await generateInvoiceHtml(input);
       setGeneratedInvoiceHtml(result.invoiceHtml);
@@ -182,8 +203,8 @@ export default function ManageInvoicePage() {
       const emailBody = {
         to: contract.clientEmail,
         subject: `Invoice ${invoiceNumber || contract.invoiceNumber} from ${user.displayName || 'Your Service Provider'}`,
-        text: `Hello ${contract.clientName || contract.brand},\n\nPlease find attached your invoice ${invoiceNumber || contract.invoiceNumber} for ${contract.projectName || 'services rendered'}.\n\nTotal Amount Due: $${contract.amount}\nDue Date: ${new Date(contract.dueDate).toLocaleDateString()}\n\nThank you,\n${user.displayName || 'Your Service Provider'}`,
-        html: invoiceContentToSend,
+        text: `Hello ${contract.clientName || contract.brand},\n\nPlease find attached your invoice ${invoiceNumber || contract.invoiceNumber} for ${contract.projectName || 'services rendered'}.\n\nTotal Amount Due: $${contract.amount}\nDue Date: ${new Date(contract.dueDate).toLocaleDateString()}\n\nClick here to pay: ${payUrl}\n\nThank you,\n${user.displayName || 'Your Service Provider'}`,
+        html: invoiceContentToSend, // The HTML already contains the pay now button with the payUrl link
       };
 
       const response = await fetch(SEND_CONTRACT_NOTIFICATION_FUNCTION_URL, {
@@ -223,7 +244,8 @@ export default function ManageInvoicePage() {
       toast({ title: "Error", description: "Contract or user data missing.", variant: "destructive" });
       return;
     }
-    if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
+    const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    if (!stripePublishableKey) {
       toast({ title: "Stripe Error", description: "Stripe publishable key is not configured.", variant: "destructive" });
       console.error("Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is missing.");
       return;
@@ -245,7 +267,7 @@ export default function ManageInvoicePage() {
 
       const { sessionId } = result.data as { sessionId: string };
       
-      const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+      const stripe = await loadStripe(stripePublishableKey);
       if (stripe) {
         const { error } = await stripe.redirectToCheckout({ sessionId });
         if (error) {
@@ -258,8 +280,8 @@ export default function ManageInvoicePage() {
     } catch (error: any) {
       console.error("Payment processing error:", error);
       let description = "Could not initiate payment.";
-      if (error.code === 'functions/not-found' || error.message?.includes('NOT_FOUND')) {
-        description = "Payment function not found. Ensure 'createStripeCheckoutSession' is deployed in this Firebase project.";
+      if (error.code === 'functions/not-found' || error.message?.includes('NOT_FOUND') || error.message?.includes('does not exist')) {
+        description = "Payment function not found. Ensure 'createStripeCheckoutSession' is deployed in this Firebase project and callable.";
       } else if (error.message) {
         description = error.message;
       }
@@ -351,7 +373,7 @@ export default function ManageInvoicePage() {
             </div>
             
             <div className="flex flex-wrap gap-2 pt-2">
-              <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment || isSendingInvoice}>
+              <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment || isSendingInvoice || !invoiceNumber}>
                 {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 {generatedInvoiceHtml || contract.invoiceHtmlContent ? "Re-generate with AI" : "Generate with AI"}
               </Button>
@@ -373,7 +395,7 @@ export default function ManageInvoicePage() {
               )}
             </div>
              <p className="text-xs text-muted-foreground">
-                Generating an invoice will use the contract details. Saving will update the contract record. Sending marks the invoice as sent and attempts to email the client.
+                Generating an invoice will use the contract details and the current invoice number. Saving will update the contract record. Sending marks the invoice as sent and attempts to email the client. The "Pay Now" link in the email will use: {payUrl || "generating..."}
              </p>
           </CardContent>
         </Card>
@@ -388,7 +410,7 @@ export default function ManageInvoicePage() {
            <Card>
             <CardHeader> <CardTitle>Previously Saved Invoice</CardTitle> </CardHeader>
             <CardContent> <div className="prose dark:prose-invert max-w-none p-4 border rounded-md bg-background overflow-auto max-h-[60vh]" dangerouslySetInnerHTML={{ __html: contract.invoiceHtmlContent }} />
-               <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment || isSendingInvoice} variant="link" className="mt-2 text-sm">
+               <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment || isSendingInvoice || !invoiceNumber} variant="link" className="mt-2 text-sm">
                 {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 Re-generate with AI to reflect changes
               </Button>
@@ -399,7 +421,7 @@ export default function ManageInvoicePage() {
           <Card>
             <CardHeader><CardTitle>No Invoice Generated Yet</CardTitle></CardHeader>
             <CardContent>
-              <p className="text-muted-foreground">Use the "Generate with AI" button to create an invoice for this contract.</p>
+              <p className="text-muted-foreground">Enter an invoice number and use the "Generate with AI" button to create an invoice for this contract.</p>
             </CardContent>
           </Card>
         )}
@@ -407,3 +429,4 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+
