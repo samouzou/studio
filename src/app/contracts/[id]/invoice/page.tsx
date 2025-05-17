@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+// import { getFunctions, httpsCallable } from 'firebase/functions'; // No longer using httpsCallable for payment
 import { loadStripe } from '@stripe/stripe-js';
 import type { Contract } from '@/types';
 import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/generate-invoice-html-flow';
@@ -20,7 +20,8 @@ import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, S
 import Link from 'next/link';
 
 const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
-const CREATE_CHECKOUT_SESSION_FUNCTION_URL = "https://createstripecheckoutsession-vkwtxfkd2a-uc.a.run.app";
+// TODO: Replace with your actual deployed createPaymentIntent function URL
+const CREATE_PAYMENT_INTENT_FUNCTION_URL = "YOUR_CREATE_PAYMENT_INTENT_FUNCTION_URL_HERE";
 
 
 export default function ManageInvoicePage() {
@@ -183,7 +184,7 @@ export default function ManageInvoicePage() {
 
     setIsSendingInvoice(true);
     try {
-      const idToken = await getUserIdToken(); // Uses the new function from useAuth
+      const idToken = await getUserIdToken();
       if (!idToken) {
         toast({ title: "Authentication Error", description: "Could not get user token. Please try again.", variant: "destructive" });
         setIsSendingInvoice(false);
@@ -243,42 +244,82 @@ export default function ManageInvoicePage() {
       console.error("Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is missing.");
       return;
     }
+    if (CREATE_PAYMENT_INTENT_FUNCTION_URL === "YOUR_CREATE_PAYMENT_INTENT_FUNCTION_URL_HERE") {
+      toast({ title: "Configuration Error", description: "Payment intent function URL is not configured.", variant: "destructive" });
+      console.error("CREATE_PAYMENT_INTENT_FUNCTION_URL is a placeholder.");
+      return;
+    }
 
     setIsProcessingPayment(true);
     try {
-      const firebaseFunctions = getFunctions(); 
-      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeCheckoutSession');
-      
-      const result = await createCheckoutSession({
-        contractId: contract.id,
-        amount: contract.amount,
-        currency: 'usd', 
-        clientEmail: contract.clientEmail || user.email, 
-        successUrl: `${window.location.origin}/payment-success?contractId=${contract.id}&session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: window.location.href,
+      const idToken = await getUserIdToken();
+      if (!idToken) {
+        toast({ title: "Authentication Error", description: "Could not get user token for payment. Please try again.", variant: "destructive" });
+        setIsProcessingPayment(false);
+        return;
+      }
+
+      const response = await fetch(CREATE_PAYMENT_INTENT_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          amount: contract.amount * 100, // Stripe expects amount in cents
+          currency: 'usd', // Or from contract
+          // Add contractId to the body if your createPaymentIntent function needs it
+          // and can pass it to payment_intent_data.metadata
+          metadata: { 
+            contractId: contract.id,
+            userId: user.uid,
+          }
+        }),
       });
 
-      const { sessionId } = result.data as { sessionId: string };
-      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Failed to create payment intent. Status: ${response.status}`);
+      }
+
+      const { clientSecret } = await response.json();
+
+      if (!clientSecret) {
+        throw new Error("Client secret not received from payment intent function.");
+      }
+
+      console.log("Received clientSecret:", clientSecret);
+      toast({ 
+        title: "Payment Intent Created", 
+        description: "Next step: Integrate Stripe Elements to confirm payment with this clientSecret.",
+        duration: 9000,
+      });
+
+      // TODO: Integrate Stripe Elements here.
+      // The following redirectToCheckout logic is for Stripe Checkout Sessions and will NOT work with Payment Intents.
+      // It's commented out to prevent errors. You'll need to replace this with logic
+      // to mount Stripe Elements (e.g., PaymentElement or CardElement) and then call
+      // stripe.confirmPayment() or stripe.confirmCardPayment().
+
+      /*
       const stripe = await loadStripe(stripePublishableKey);
       if (stripe) {
-        const { error } = await stripe.redirectToCheckout({ sessionId });
-        if (error) {
-          console.error("Stripe redirection error:", error);
-          toast({ title: "Payment Error", description: error.message || "Failed to redirect to Stripe.", variant: "destructive" });
-        }
+        // This is for Stripe Checkout, not Payment Intents.
+        // const { error } = await stripe.redirectToCheckout({ sessionId }); // 'sessionId' is from createStripeCheckoutSession
+        // if (error) {
+        //   console.error("Stripe redirection error:", error);
+        //   toast({ title: "Payment Error", description: error.message || "Failed to redirect to Stripe.", variant: "destructive" });
+        // }
+        toast({title: "Next Step Required", description: "Implement Stripe Elements to use clientSecret for payment.", variant: "default", duration: 10000});
+
       } else {
         throw new Error("Stripe.js failed to load.");
       }
+      */
+
     } catch (error: any) {
       console.error("Payment processing error:", error);
-      let description = "Could not initiate payment.";
-      if (error.code === 'functions/not-found' || error.message?.includes('NOT_FOUND') || error.message?.includes('does not exist')) {
-        description = "Payment function not found. Ensure 'createStripeCheckoutSession' is deployed in this Firebase project and callable.";
-      } else if (error.message) {
-        description = error.message;
-      }
-      toast({ title: "Payment Failed", description: description, variant: "destructive" });
+      toast({ title: "Payment Failed", description: error.message || "Could not initiate payment.", variant: "destructive" });
     } finally {
       setIsProcessingPayment(false);
     }
@@ -389,6 +430,8 @@ export default function ManageInvoicePage() {
             </div>
              <p className="text-xs text-muted-foreground">
                 Generating an invoice will use the contract details and the current invoice number. Saving will update the contract record. Sending marks the invoice as sent and attempts to email the client. The "Pay Now" link in the email will use: {payUrl || "generating..."}
+                <br />
+                For "Pay Invoice" button: ensure your backend `createPaymentIntent` function is correctly configured at {CREATE_PAYMENT_INTENT_FUNCTION_URL === "YOUR_CREATE_PAYMENT_INTENT_FUNCTION_URL_HERE" ? "the placeholder URL (needs update!)" : CREATE_PAYMENT_INTENT_FUNCTION_URL} and that it includes `contractId` in PaymentIntent metadata for webhook processing.
              </p>
           </CardContent>
         </Card>
@@ -422,5 +465,6 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+    
 
     
