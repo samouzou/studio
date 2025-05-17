@@ -63,7 +63,7 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
         uid,
         email,
         displayName: displayName || email?.split('@')[0] || 'User',
-        avatarUrl: photoURL,
+        avatarUrl: photoURL || null,
         createdAt,
         // Initialize subscription fields for new user
         stripeCustomerId: null,
@@ -78,7 +78,7 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
       console.error("Error creating user document in Firestore:", error);
     }
   } else {
-    // For existing user, access properties directly from firebaseUser object
+    // For existing user, ensure all fields are present
     const existingData = userDocSnap.data();
     const updates: Partial<UserProfile> = {};
     
@@ -89,12 +89,21 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
       updates.displayName = firebaseUser.displayName;
     }
     // Ensure essential subscription fields are present if somehow missing (migration for old users)
-    if (existingData.subscriptionStatus === undefined) updates.subscriptionStatus = 'none';
-    if (existingData.trialEndsAt === undefined && existingData.subscriptionStatus !== 'active') { // Only set default trial if not already active
+    if (existingData.stripeCustomerId === undefined) updates.stripeCustomerId = null;
+    if (existingData.stripeSubscriptionId === undefined) updates.stripeSubscriptionId = null;
+    if (existingData.subscriptionStatus === undefined) {
+        updates.subscriptionStatus = 'none'; // Default to 'none' if not present
+    }
+    if (existingData.trialEndsAt === undefined && updates.subscriptionStatus !== 'active' && existingData.subscriptionStatus !== 'active') {
+        // Only set default trial if not already active and no trialEndsAt exists
         const createdAt = existingData.createdAt instanceof Timestamp ? existingData.createdAt : Timestamp.now();
         updates.trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds); 
-        if (updates.subscriptionStatus === 'none') updates.subscriptionStatus = 'trialing';
+        if (updates.subscriptionStatus === 'none' || existingData.subscriptionStatus === 'none') {
+            updates.subscriptionStatus = 'trialing'; // Change to trialing if they were 'none' and get a trial
+        }
     }
+    if (existingData.subscriptionEndsAt === undefined) updates.subscriptionEndsAt = null;
+    if (existingData.trialExtensionUsed === undefined) updates.trialExtensionUsed = false;
 
 
     if (Object.keys(updates).length > 0) {
@@ -119,16 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (currentFirebaseUser) {
         await createUserDocument(currentFirebaseUser); 
         
+        // Re-fetch after createUserDocument to ensure we have the latest, including defaults for old users
         const userDocRef = doc(db, 'users', currentFirebaseUser.uid);
-        const userDocSnap = await getDoc(userDocRef);
+        const userDocSnap = await getDoc(userDocRef); // Re-fetch
 
         if (userDocSnap.exists()) {
           const firestoreUserData = userDocSnap.data();
           setUser({
             uid: currentFirebaseUser.uid,
             email: currentFirebaseUser.email,
-            displayName: firestoreUserData.displayName || currentFirebaseUser.displayName, // Prioritize Firestore, then Auth
-            avatarUrl: firestoreUserData.avatarUrl || currentFirebaseUser.photoURL,       // Prioritize Firestore, then Auth
+            displayName: firestoreUserData.displayName || currentFirebaseUser.displayName,
+            avatarUrl: firestoreUserData.avatarUrl || currentFirebaseUser.photoURL,
             stripeCustomerId: firestoreUserData.stripeCustomerId || null,
             stripeSubscriptionId: firestoreUserData.stripeSubscriptionId || null,
             subscriptionStatus: firestoreUserData.subscriptionStatus || 'none',
@@ -137,16 +147,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             trialExtensionUsed: firestoreUserData.trialExtensionUsed || false,
           });
         } else {
-           // This case should ideally not happen if createUserDocument works correctly,
-           // but as a fallback:
-           console.warn(`User document for ${currentFirebaseUser.uid} not found after createUserDocument call. Setting basic user profile.`);
+           console.warn(`User document for ${currentFirebaseUser.uid} still not found after createUserDocument call. Setting basic user profile.`);
            setUser({
             uid: currentFirebaseUser.uid,
             email: currentFirebaseUser.email,
             displayName: currentFirebaseUser.displayName,
             avatarUrl: currentFirebaseUser.photoURL,
+            stripeCustomerId: null,
+            stripeSubscriptionId: null,
             subscriptionStatus: 'none', 
             trialEndsAt: null, 
+            subscriptionEndsAt: null,
             trialExtensionUsed: false,
           });
         }

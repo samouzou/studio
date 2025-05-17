@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { functions } from '@/lib/firebase'; // Assuming functions is exported from firebase.ts for same-project calls
+import { functions } from '@/lib/firebase'; 
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CreditCard, Settings2, CheckCircle, XCircle, CalendarClock } from "lucide-react";
+import { Loader2, CreditCard, Settings2, CheckCircle, XCircle, CalendarClock, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 
@@ -23,24 +23,16 @@ export function SubscriptionCard() {
   const handleSubscribe = async () => {
     setIsProcessingCheckout(true);
     try {
-      const createCheckoutSession = httpsCallable(functions, 'createStripeSubscriptionCheckoutSession');
+      // Ensure functions is initialized if you are calling functions from the same project
+      const firebaseFunctions = functions; // from '@/lib/firebase'
+      const createCheckoutSession = httpsCallable(firebaseFunctions, 'createStripeSubscriptionCheckoutSession');
       const result = await createCheckoutSession();
       const { sessionId } = result.data as { sessionId: string };
       
-      // For client-side Stripe, you'd typically get the Stripe.js instance here
-      // This is a simplified example assuming redirect if sessionId is directly a URL
-      // or you handle Stripe.js redirection logic.
-      // For Stripe Checkout, you usually redirect to a Stripe-hosted page.
-      // If Stripe.js is needed:
-      // const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-      // await stripe?.redirectToCheckout({ sessionId });
-      // For now, let's assume the sessionId might be directly usable or a full URL
-      // (though typically it's an ID for Stripe.js to use)
       if (sessionId && (window as any).Stripe) {
          const stripe = (window as any).Stripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
          await stripe.redirectToCheckout({ sessionId });
       } else if (sessionId) {
-        // Fallback if Stripe.js isn't loaded yet, or if it's a direct URL (less common for checkout sessions)
         window.location.href = sessionId; 
       } else {
         throw new Error("Could not retrieve a valid session ID from Stripe.");
@@ -58,10 +50,15 @@ export function SubscriptionCard() {
   };
 
   const handleManageSubscription = async () => {
+    if (!user.stripeCustomerId) {
+      toast({ title: "Error", description: "No Stripe customer ID found. Cannot manage subscription.", variant: "destructive" });
+      return;
+    }
     setIsProcessingPortal(true);
     try {
-      const createPortalSession = httpsCallable(functions, 'createStripeCustomerPortalSession');
-      const result = await createPortalSession();
+      const firebaseFunctions = functions; // from '@/lib/firebase'
+      const createPortalSession = httpsCallable(firebaseFunctions, 'createStripeCustomerPortalSession');
+      const result = await createPortalSession(); // No data needs to be passed if backend gets UID from context.auth
       const { url } = result.data as { url: string };
       if (url) {
         window.location.href = url;
@@ -83,11 +80,9 @@ export function SubscriptionCard() {
   const formatDateSafe = (timestamp: any) => {
     if (!timestamp) return "N/A";
     try {
-      // Firestore Timestamp has .toDate() method
       if (timestamp.toDate && typeof timestamp.toDate === 'function') {
         return format(timestamp.toDate(), "PPP");
       }
-      // If it's already a Date object or a string that can be parsed
       return format(new Date(timestamp), "PPP");
     } catch (e) {
       return "Invalid Date";
@@ -114,7 +109,16 @@ export function SubscriptionCard() {
     }
   };
   
-  const isEffectivelySubscribed = user.subscriptionStatus === 'active' || (user.subscriptionStatus === 'trialing' && user.trialEndsAt && user.trialEndsAt.toMillis() > Date.now());
+  const canSubscribe = !user.stripeCustomerId || 
+                       user.subscriptionStatus === 'none' || 
+                       user.subscriptionStatus === 'canceled' ||
+                       (user.subscriptionStatus === 'trialing'); // Allow subscribing even during trial
+
+  const canManage = !!user.stripeCustomerId && 
+                    (user.subscriptionStatus === 'active' || 
+                     user.subscriptionStatus === 'past_due' || 
+                     user.subscriptionStatus === 'trialing' ||
+                     user.subscriptionStatus === 'canceled'); // Can manage even if canceled to see history/reactivate
 
   return (
     <Card className="shadow-lg">
@@ -172,7 +176,7 @@ export function SubscriptionCard() {
 
 
         <div className="flex flex-col sm:flex-row gap-3 pt-2">
-          {!isEffectivelySubscribed && user.subscriptionStatus !== 'past_due' && (
+          {canSubscribe && user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'past_due' && (
             <Button
               onClick={handleSubscribe}
               disabled={isProcessingCheckout || isProcessingPortal}
@@ -183,14 +187,16 @@ export function SubscriptionCard() {
               ) : (
                 <CreditCard className="mr-2 h-4 w-4" />
               )}
-              {user.subscriptionStatus === 'trialing' && user.trialEndsAt && user.trialEndsAt.toMillis() > Date.now() ? 'Subscribe Now' : 'Subscribe to Verza Pro'}
+              {user.subscriptionStatus === 'trialing' && user.trialEndsAt && user.trialEndsAt.toMillis() > Date.now() 
+                ? 'Subscribe Now (End Trial Early)' 
+                : 'Subscribe to Verza Pro'}
             </Button>
           )}
 
-          {(isEffectivelySubscribed || user.subscriptionStatus === 'past_due' || user.subscriptionStatus === 'canceled') && (
+          {canManage && (
             <Button
               onClick={handleManageSubscription}
-              disabled={isProcessingCheckout || isProcessingPortal}
+              disabled={isProcessingCheckout || isProcessingPortal || !user.stripeCustomerId}
               variant="outline"
               className="flex-1"
             >
