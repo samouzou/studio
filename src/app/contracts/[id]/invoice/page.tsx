@@ -13,7 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { loadStripe } from '@stripe/stripe-js';
+import { loadStripe, type Stripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import { StripePaymentForm } from '@/components/payments/stripe-payment-form'; 
 import type { Contract } from '@/types';
 import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/generate-invoice-html-flow';
 import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react';
@@ -37,10 +39,22 @@ export default function ManageInvoicePage() {
   const [invoiceStatus, setInvoiceStatus] = useState<Contract['invoiceStatus']>('none');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [isSendingInvoice, setIsSendingInvoice] = useState(false);
+  
+  const [isFetchingClientSecret, setIsFetchingClientSecret] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
+
   const [payUrl, setPayUrl] = useState<string>("");
 
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
+      setStripePromise(loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY));
+    } else {
+      console.error("Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is missing.");
+      toast({ title: "Stripe Error", description: "Stripe publishable key is not configured. Payment functionality will be disabled.", variant: "destructive", duration: 9000 });
+    }
+  }, [toast]);
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -57,7 +71,7 @@ export default function ManageInvoicePage() {
             }
             setInvoiceNumber(data.invoiceNumber || `INV-${data.brand?.substring(0,3).toUpperCase() || 'AAA'}-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${id.substring(0,4).toUpperCase()}`);
             setInvoiceStatus(data.invoiceStatus || 'none');
-            if (typeof window !== 'undefined') {
+             if (typeof window !== 'undefined') {
               setPayUrl(`${window.location.origin}/pay/contract/${id}`);
             }
           } else {
@@ -181,12 +195,12 @@ export default function ManageInvoicePage() {
       return;
     }
 
-    setIsSendingInvoice(true);
+    setIsSending(true);
     try {
       const idToken = await getUserIdToken();
       if (!idToken) {
         toast({ title: "Authentication Error", description: "Could not get user token. Please try again.", variant: "destructive" });
-        setIsSendingInvoice(false);
+        setIsSending(false);
         return;
       }
 
@@ -228,17 +242,18 @@ export default function ManageInvoicePage() {
       console.error("Error sending invoice:", error);
       toast({ title: "Send Failed", description: error.message || "Could not send invoice email.", variant: "destructive" });
     } finally {
-      setIsSendingInvoice(false);
+      setIsSending(false);
     }
   };
+  const [isSending, setIsSending] = useState(false);
 
-  const handlePayInvoice = async () => {
+
+  const handleInitiatePayment = async () => {
     if (!contract || !user) {
       toast({ title: "Error", description: "Contract or user data missing.", variant: "destructive" });
       return;
     }
-    const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-    if (!stripePublishableKey) {
+    if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
       toast({ title: "Stripe Error", description: "Stripe publishable key is not configured.", variant: "destructive" });
       console.error("Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is missing.");
       return;
@@ -249,12 +264,14 @@ export default function ManageInvoicePage() {
       return;
     }
 
-    setIsProcessingPayment(true);
+    setIsFetchingClientSecret(true);
+    setClientSecret(null); // Reset previous secret
+
     try {
       const idToken = await getUserIdToken();
       if (!idToken) {
         toast({ title: "Authentication Error", description: "Could not get user token for payment. Please try again.", variant: "destructive" });
-        setIsProcessingPayment(false);
+        setIsFetchingClientSecret(false);
         return;
       }
 
@@ -265,10 +282,9 @@ export default function ManageInvoicePage() {
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          amount: contract.amount * 100, // Stripe expects amount in cents
-          currency: 'usd', // Or from contract
-          contractId: contract.id, // Pass contractId directly in the body
-          // userId is handled by backend token verification
+          amount: contract.amount * 100, 
+          currency: 'usd', 
+          contractId: contract.id, 
         }),
       });
 
@@ -277,58 +293,21 @@ export default function ManageInvoicePage() {
         throw new Error(errorData.message || `Failed to create payment intent. Status: ${response.status}`);
       }
 
-      const { clientSecret } = await response.json();
+      const { clientSecret: receivedClientSecret } = await response.json();
 
-      if (!clientSecret) {
+      if (!receivedClientSecret) {
         throw new Error("Client secret not received from payment intent function.");
       }
-
-      console.log("Received clientSecret:", clientSecret);
-      toast({ 
-        title: "Payment Intent Created", 
-        description: "Next step: Integrate Stripe Elements to collect payment details and confirm payment with this clientSecret.",
-        duration: 9000,
-      });
-
-      // TODO: Implement Stripe Elements UI and payment confirmation
-      // 1. Initialize Stripe with your publishable key (already done via loadStripe)
-      // 2. Create an instance of Elements.
-      // 3. Create and mount a PaymentElement (or CardElement) to your DOM.
-      // 4. When the user submits their payment details:
-      //    - Call `stripe.confirmPayment()` (for PaymentElement) or
-      //      `stripe.confirmCardPayment()` (for CardElement) with the `elements` instance
-      //      and the `clientSecret`.
-      //    - Handle the result (success or error).
-
-      /*
-      // Example (conceptual) - this part needs full Stripe Elements integration
-      const stripe = await loadStripe(stripePublishableKey);
-      if (stripe) {
-        // This is where you would use Stripe Elements to confirm the payment with the clientSecret
-        // For example, if using PaymentElement:
-        // const {error} = await stripe.confirmPayment({
-        //   elements, // an instance of Stripe Elements
-        //   clientSecret,
-        //   confirmParams: {
-        //     return_url: `${window.location.origin}/payment-success?contractId=${contract.id}`,
-        //   },
-        // });
-        // if (error) {
-        //   toast({ title: "Payment Error", description: error.message || "Failed to confirm payment.", variant: "destructive" });
-        // } else {
-        //   // Payment successful or processing, user will be redirected by return_url if set.
-        // }
-        toast({title: "Next Step Required", description: "Implement Stripe Elements to use clientSecret for payment.", variant: "default", duration: 10000});
-      } else {
-        throw new Error("Stripe.js failed to load.");
-      }
-      */
+      
+      setClientSecret(receivedClientSecret);
+      toast({ title: "Payment Form Ready", description: "Please enter your card details below." });
 
     } catch (error: any) {
-      console.error("Payment processing error:", error);
-      toast({ title: "Payment Failed", description: error.message || "Could not initiate payment.", variant: "destructive" });
+      console.error("Payment intent creation error:", error);
+      toast({ title: "Payment Setup Failed", description: error.message || "Could not initiate payment.", variant: "destructive" });
+      setClientSecret(null);
     } finally {
-      setIsProcessingPayment(false);
+      setIsFetchingClientSecret(false);
     }
   };
 
@@ -353,8 +332,17 @@ export default function ManageInvoicePage() {
     );
   }
 
-  const canPay = (invoiceStatus === 'draft' || invoiceStatus === 'sent' || invoiceStatus === 'overdue') && contract.amount > 0;
+  const canPay = (invoiceStatus === 'draft' || invoiceStatus === 'sent' || invoiceStatus === 'overdue') && contract.amount > 0 && !clientSecret;
   const canSendInvoice = (!!generatedInvoiceHtml || !!contract.invoiceHtmlContent) && invoiceStatus === 'draft';
+
+  const appearance = {
+    theme: 'stripe', // or 'night', 'flat'
+    variables: {
+      colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(), // Example using CSS var
+    },
+  };
+  const elementsOptions = clientSecret ? { clientSecret, appearance } : undefined;
+
 
   return (
     <>
@@ -396,7 +384,7 @@ export default function ManageInvoicePage() {
                  <Select 
                     value={invoiceStatus || 'none'} 
                     onValueChange={(value) => handleStatusChange(value as Contract['invoiceStatus'])}
-                    disabled={isSaving || isLoadingContract || isSendingInvoice}
+                    disabled={isSaving || isLoadingContract || isSending || !!clientSecret}
                   >
                   <SelectTrigger className="max-w-sm" id="invoiceStatusSelect">
                     <SelectValue placeholder="Set Status" />
@@ -414,53 +402,68 @@ export default function ManageInvoicePage() {
             </div>
             
             <div className="flex flex-wrap gap-2 pt-2">
-              <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment || isSendingInvoice || !invoiceNumber}>
+              <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isFetchingClientSecret || isSending || !invoiceNumber || !!clientSecret}>
                 {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 {generatedInvoiceHtml || contract.invoiceHtmlContent ? "Re-generate with AI" : "Generate with AI"}
               </Button>
-              <Button onClick={handleSaveInvoice} disabled={isSaving || !generatedInvoiceHtml || !invoiceNumber || isProcessingPayment || isSendingInvoice}>
+              <Button onClick={handleSaveInvoice} disabled={isSaving || !generatedInvoiceHtml || !invoiceNumber || isFetchingClientSecret || isSending || !!clientSecret}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                 Save Invoice
               </Button>
               {canSendInvoice && (
-                <Button onClick={handleSendInvoice} disabled={isSendingInvoice || isGenerating || isSaving || isProcessingPayment}>
-                  {isSendingInvoice ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                <Button onClick={handleSendInvoice} disabled={isSending || isGenerating || isSaving || isFetchingClientSecret || !!clientSecret}>
+                  {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                   Send to Client
                 </Button>
               )}
                {canPay && ( 
-                <Button onClick={handlePayInvoice} disabled={isProcessingPayment || isGenerating || isSaving || isSendingInvoice} variant="default">
-                  {isProcessingPayment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+                <Button onClick={handleInitiatePayment} disabled={isFetchingClientSecret || isGenerating || isSaving || isSending || !stripePromise} variant="default">
+                  {isFetchingClientSecret ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
                   Pay Invoice (${contract.amount.toLocaleString()})
                 </Button>
               )}
             </div>
              <p className="text-xs text-muted-foreground">
-                Generating an invoice will use the contract details and the current invoice number. Saving will update the contract record. Sending marks the invoice as sent and attempts to email the client. The "Pay Now" link in the email will use: {payUrl || "generating..."}
+                The "Pay Now" link for client emails will use: {payUrl || "generating..."}
                 <br />
-                For "Pay Invoice" button: ensure your backend `createPaymentIntent` function is correctly configured at {CREATE_PAYMENT_INTENT_FUNCTION_URL} and that it includes `contractId` in PaymentIntent metadata for webhook processing.
+                For direct payment via "Pay Invoice": ensure your backend `createPaymentIntent` function at {CREATE_PAYMENT_INTENT_FUNCTION_URL} passes `contractId` in metadata.
              </p>
           </CardContent>
         </Card>
 
-        {generatedInvoiceHtml && (
+        {clientSecret && stripePromise && elementsOptions && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Enter Payment Details</CardTitle>
+              <CardDescription>Securely enter your card information below.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Elements stripe={stripePromise} options={elementsOptions}>
+                <StripePaymentForm clientSecret={clientSecret} contractId={contract.id} />
+              </Elements>
+            </CardContent>
+          </Card>
+        )}
+
+
+        {generatedInvoiceHtml && !clientSecret && (
           <Card>
             <CardHeader> <CardTitle>Invoice Preview</CardTitle> <CardDescription>This is the HTML content of your invoice. You can copy it or use browser print-to-PDF.</CardDescription> </CardHeader>
             <CardContent> <div className="prose dark:prose-invert max-w-none p-4 border rounded-md bg-background overflow-auto max-h-[60vh]" dangerouslySetInnerHTML={{ __html: generatedInvoiceHtml }} /> </CardContent>
           </Card>
         )}
-         {!generatedInvoiceHtml && contract.invoiceHtmlContent && (
+         {!generatedInvoiceHtml && contract.invoiceHtmlContent && !clientSecret && (
            <Card>
             <CardHeader> <CardTitle>Previously Saved Invoice</CardTitle> </CardHeader>
             <CardContent> <div className="prose dark:prose-invert max-w-none p-4 border rounded-md bg-background overflow-auto max-h-[60vh]" dangerouslySetInnerHTML={{ __html: contract.invoiceHtmlContent }} />
-               <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isProcessingPayment || isSendingInvoice || !invoiceNumber} variant="link" className="mt-2 text-sm">
+               <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isFetchingClientSecret || isSending || !invoiceNumber || !!clientSecret} variant="link" className="mt-2 text-sm">
                 {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                 Re-generate with AI to reflect changes
               </Button>
             </CardContent>
           </Card>
         )}
-         {(!generatedInvoiceHtml && !contract.invoiceHtmlContent) && (
+         {(!generatedInvoiceHtml && !contract.invoiceHtmlContent && !clientSecret) && (
           <Card>
             <CardHeader><CardTitle>No Invoice Generated Yet</CardTitle></CardHeader>
             <CardContent>
@@ -472,8 +475,3 @@ export default function ManageInvoicePage() {
     </>
   );
 }
-    
-
-    
-
-    
