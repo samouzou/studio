@@ -75,15 +75,16 @@ export default function DashboardPage() {
             if (updatedAt && !(updatedAt instanceof Timestamp)) {
               if (updatedAt.seconds && typeof updatedAt.seconds === 'number') {
                 updatedAt = new Timestamp(updatedAt.seconds, updatedAt.nanoseconds || 0);
-              } // If not a Timestamp object, leave as is (could be undefined)
+              } else if (typeof updatedAt === 'string') { // Handle string dates
+                updatedAt = Timestamp.fromDate(new Date(updatedAt));
+              }
             }
-            // If updatedAt is not present in data, it will be undefined, which is fine for the Contract type.
             
             return { 
               id: docSnap.id, 
               ...data,
               createdAt: createdAt,
-              updatedAt: updatedAt,
+              updatedAt: updatedAt, // Will be Timestamp or undefined
             } as Contract;
           });
           setAllContracts(fetchedContracts);
@@ -149,28 +150,37 @@ export default function DashboardPage() {
       if (!c.dueDate) return; 
       const contractDueDate = new Date(c.dueDate + 'T00:00:00'); 
 
+      // Pending Income (based on contract status and future due date)
       if ((c.status === 'pending' || c.status === 'invoiced') && contractDueDate >= todayMidnight) {
         upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
         totalPendingIncome += c.amount;
       }
 
-      if (c.status === 'paid') {
-        const paidDate = contractDueDate; 
-        if (paidDate.getMonth() === today.getMonth() && 
-            paidDate.getFullYear() === today.getFullYear()) {
+      // Paid This Month (based on invoiceStatus being 'paid' and updatedAt timestamp)
+      if (c.invoiceStatus === 'paid' && c.updatedAt instanceof Timestamp) {
+        const paymentDate = c.updatedAt.toDate();
+        if (paymentDate.getMonth() === today.getMonth() && 
+            paymentDate.getFullYear() === today.getFullYear()) {
           paidThisMonthAmount += c.amount;
         }
       }
 
+      // At Risk Payments
       let isAtRisk = false;
       let riskReason = "";
-      let effectiveStatus = c.status;
+      let effectiveStatus = c.status; // Start with overall contract status
 
-      if (c.status === 'overdue' || ((c.status === 'pending' || c.status === 'invoiced') && contractDueDate < todayMidnight)) {
+      // Consider invoice status for overdue calculation if contract itself isn't marked overdue
+      // If invoice is sent/viewed and past due, it's at risk.
+      if ((c.invoiceStatus === 'sent' || c.invoiceStatus === 'viewed' || c.invoiceStatus === 'overdue') && contractDueDate < todayMidnight) {
         isAtRisk = true;
         riskReason = 'Payment overdue';
         effectiveStatus = 'overdue'; 
-      } else if ((c.status === 'pending' || c.status === 'invoiced') && contractDueDate < sevenDaysFromTodayMidnight) { 
+      } else if (c.status === 'overdue') { // If contract status is already overdue
+        isAtRisk = true;
+        riskReason = 'Payment overdue (contract status)';
+        effectiveStatus = 'overdue';
+      } else if ((c.status === 'pending' || c.status === 'invoiced' || c.invoiceStatus === 'sent' || c.invoiceStatus === 'viewed') && contractDueDate < sevenDaysFromTodayMidnight) { 
         isAtRisk = true;
         riskReason = 'Due soon';
       }
@@ -185,7 +195,7 @@ export default function DashboardPage() {
           brand: c.brand,
           amount: c.amount,
           dueDate: c.dueDate,
-          status: effectiveStatus,
+          status: effectiveStatus, // Use the derived effective status
           riskReason: riskReason,
           projectName: c.projectName,
         });
@@ -204,7 +214,7 @@ export default function DashboardPage() {
     setStats({
       totalPendingIncome,
       upcomingIncomeCount: upcomingIncomeSource.length,
-      totalContractsCount: allContracts.length,
+      totalContractsCount: allContracts.length, // Using all contracts before filtering for this stat
       atRiskPaymentsCount: atRiskPaymentsList.length,
       totalOverdueCount: currentTotalOverdueCount,
       paidThisMonthAmount,
@@ -309,7 +319,7 @@ export default function DashboardPage() {
           title="Paid This Month (Filtered)" 
           value={`$${stats.paidThisMonthAmount.toLocaleString()}`}
           icon={CalendarCheck}
-          description="Successfully received"
+          description="Based on invoices marked 'paid' this month"
         />
       </div>
 
