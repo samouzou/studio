@@ -8,6 +8,7 @@ import {
   onAuthStateChanged, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
+  updateProfile, // Added for updating Auth user profile
   type User as FirebaseUser 
 } from 'firebase/auth';
 import { 
@@ -28,8 +29,8 @@ import {
   writeBatch,
   onSnapshot 
 } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
-import { getFunctions } from 'firebase/functions'; // Added getFunctions
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'; // Added Storage functions
+import { getFunctions } from 'firebase/functions';
 
 const firebaseConfigValues = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -40,19 +41,11 @@ const firebaseConfigValues = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-if (!firebaseConfigValues.apiKey) {
+if (!firebaseConfigValues.apiKey || !firebaseConfigValues.projectId) {
   throw new Error(
-    "Firebase API Key (NEXT_PUBLIC_FIREBASE_API_KEY) is missing. " +
-    "Please ensure it is set in your .env file. " +
-    "The application cannot connect to Firebase without it."
-  );
-}
-
-if (!firebaseConfigValues.projectId) {
-  throw new Error(
-    "Firebase Project ID (NEXT_PUBLIC_FIREBASE_PROJECT_ID) is missing. " +
-    "Please ensure it is set in your .env file. " +
-    "The application cannot connect to Firebase without it."
+    "Firebase API Key or Project ID is missing. " +
+    "Please ensure NEXT_PUBLIC_FIREBASE_API_KEY and NEXT_PUBLIC_FIREBASE_PROJECT_ID are set in your .env file. " +
+    "The application cannot connect to Firebase without them."
   );
 }
 
@@ -61,21 +54,22 @@ const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app);
-const functions = getFunctions(app); // Initialize Firebase Functions
+const storage = getStorage(app); // Initialize Firebase Storage
+const functions = getFunctions(app); 
 
 export { 
   app, 
   auth, 
   db, 
   storage, 
-  functions, // Export functions
+  functions, 
   googleAuthProvider, 
   signInWithPopup,
   signOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  updateProfile, // Export updateProfile for Auth
   type FirebaseUser,
   collection, 
   doc, 
@@ -91,5 +85,9 @@ export {
   deleteDoc, 
   updateDoc,
   writeBatch,
-  onSnapshot
+  onSnapshot,
+  // Export Storage functions if needed directly by components, though often wrapped
+  ref as storageRef, 
+  uploadBytes, 
+  getDownloadURL
 };

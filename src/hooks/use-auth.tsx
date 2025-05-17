@@ -2,14 +2,14 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import { 
   auth, 
   googleAuthProvider, 
   signInWithPopup, 
   signOut, 
   onAuthStateChanged, 
-  createUserWithEmailAndPassword, 
+  createUserWithEmailAndPassword as firebaseCreateUserWithEmailAndPassword, 
   signInWithEmailAndPassword as firebaseSignInWithEmailAndPassword, 
   type FirebaseUser,
   db,
@@ -24,7 +24,6 @@ export interface UserProfile {
   email: string | null;
   displayName: string | null;
   avatarUrl: string | null;
-  // Subscription fields
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   subscriptionStatus?: 'trialing' | 'active' | 'past_due' | 'canceled' | 'incomplete' | 'none';
@@ -42,6 +41,7 @@ interface AuthContextType {
   signupWithEmailAndPassword: (email: string, password: string) => Promise<void>;
   isLoading: boolean;
   getUserIdToken: () => Promise<string | null>;
+  refreshAuthUser: () => Promise<void>; // New function to refresh user data
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -49,14 +49,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 async function createUserDocument(firebaseUser: FirebaseUser) {
   if (!firebaseUser) return;
   const userDocRef = doc(db, 'users', firebaseUser.uid);
-  
   const userDocSnap = await getDoc(userDocRef);
 
   if (!userDocSnap.exists()) {
-    // Destructure for new user document creation
     const { uid, email, displayName, photoURL } = firebaseUser;
     const createdAt = Timestamp.now();
-    const trialEndsAtTimestamp = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds); // 7 days from now
+    const trialEndsAtTimestamp = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
 
     try {
       await setDoc(userDocRef, {
@@ -65,7 +63,6 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
         displayName: displayName || email?.split('@')[0] || 'User',
         avatarUrl: photoURL || null,
         createdAt,
-        // Initialize subscription fields for new user
         stripeCustomerId: null,
         stripeSubscriptionId: null,
         subscriptionStatus: 'trialing',
@@ -78,7 +75,6 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
       console.error("Error creating user document in Firestore:", error);
     }
   } else {
-    // For existing user, ensure all fields are present
     const existingData = userDocSnap.data();
     const updates: Partial<UserProfile> = {};
     
@@ -88,23 +84,25 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
     if (firebaseUser.displayName && existingData.displayName !== firebaseUser.displayName) {
       updates.displayName = firebaseUser.displayName;
     }
-    // Ensure essential subscription fields are present if somehow missing (migration for old users)
     if (existingData.stripeCustomerId === undefined) updates.stripeCustomerId = null;
     if (existingData.stripeSubscriptionId === undefined) updates.stripeSubscriptionId = null;
     if (existingData.subscriptionStatus === undefined) {
-        updates.subscriptionStatus = 'none'; // Default to 'none' if not present
+        updates.subscriptionStatus = 'none'; 
     }
     if (existingData.trialEndsAt === undefined && updates.subscriptionStatus !== 'active' && existingData.subscriptionStatus !== 'active') {
-        // Only set default trial if not already active and no trialEndsAt exists
         const createdAt = existingData.createdAt instanceof Timestamp ? existingData.createdAt : Timestamp.now();
         updates.trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds); 
         if (updates.subscriptionStatus === 'none' || existingData.subscriptionStatus === 'none') {
-            updates.subscriptionStatus = 'trialing'; // Change to trialing if they were 'none' and get a trial
+            updates.subscriptionStatus = 'trialing';
         }
+    } else if (existingData.trialEndsAt instanceof Timestamp && existingData.trialEndsAt.toMillis() < Date.now() && existingData.subscriptionStatus === 'trialing') {
+      // If trial has ended and status is still 'trialing', mark as 'none' or 'expired'
+      updates.subscriptionStatus = 'none'; // Or a new status like 'trial_expired'
     }
+
+
     if (existingData.subscriptionEndsAt === undefined) updates.subscriptionEndsAt = null;
     if (existingData.trialExtensionUsed === undefined) updates.trialExtensionUsed = false;
-
 
     if (Object.keys(updates).length > 0) {
       try {
@@ -122,57 +120,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [firebaseUserInstance, setFirebaseUserInstance] = useState<FirebaseUser | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentFirebaseUser: FirebaseUser | null) => {
+  const fetchAndSetUser = useCallback(async (currentFirebaseUser: FirebaseUser | null) => {
+    if (currentFirebaseUser) {
       setFirebaseUserInstance(currentFirebaseUser);
-      if (currentFirebaseUser) {
-        await createUserDocument(currentFirebaseUser); 
-        
-        // Re-fetch after createUserDocument to ensure we have the latest, including defaults for old users
-        const userDocRef = doc(db, 'users', currentFirebaseUser.uid);
-        const userDocSnap = await getDoc(userDocRef); // Re-fetch
+      await createUserDocument(currentFirebaseUser); 
+      
+      const userDocRef = doc(db, 'users', currentFirebaseUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
 
-        if (userDocSnap.exists()) {
-          const firestoreUserData = userDocSnap.data();
-          setUser({
-            uid: currentFirebaseUser.uid,
-            email: currentFirebaseUser.email,
-            displayName: firestoreUserData.displayName || currentFirebaseUser.displayName,
-            avatarUrl: firestoreUserData.avatarUrl || currentFirebaseUser.photoURL,
-            stripeCustomerId: firestoreUserData.stripeCustomerId || null,
-            stripeSubscriptionId: firestoreUserData.stripeSubscriptionId || null,
-            subscriptionStatus: firestoreUserData.subscriptionStatus || 'none',
-            trialEndsAt: firestoreUserData.trialEndsAt || null,
-            subscriptionEndsAt: firestoreUserData.subscriptionEndsAt || null,
-            trialExtensionUsed: firestoreUserData.trialExtensionUsed || false,
-          });
-        } else {
-           console.warn(`User document for ${currentFirebaseUser.uid} still not found after createUserDocument call. Setting basic user profile.`);
-           setUser({
-            uid: currentFirebaseUser.uid,
-            email: currentFirebaseUser.email,
-            displayName: currentFirebaseUser.displayName,
-            avatarUrl: currentFirebaseUser.photoURL,
-            stripeCustomerId: null,
-            stripeSubscriptionId: null,
-            subscriptionStatus: 'none', 
-            trialEndsAt: null, 
-            subscriptionEndsAt: null,
-            trialExtensionUsed: false,
-          });
-        }
+      if (userDocSnap.exists()) {
+        const firestoreUserData = userDocSnap.data();
+        setUser({
+          uid: currentFirebaseUser.uid,
+          email: currentFirebaseUser.email,
+          displayName: firestoreUserData.displayName || currentFirebaseUser.displayName,
+          avatarUrl: firestoreUserData.avatarUrl || currentFirebaseUser.photoURL,
+          stripeCustomerId: firestoreUserData.stripeCustomerId || null,
+          stripeSubscriptionId: firestoreUserData.stripeSubscriptionId || null,
+          subscriptionStatus: firestoreUserData.subscriptionStatus || 'none',
+          trialEndsAt: firestoreUserData.trialEndsAt || null,
+          subscriptionEndsAt: firestoreUserData.subscriptionEndsAt || null,
+          trialExtensionUsed: firestoreUserData.trialExtensionUsed || false,
+        });
       } else {
-        setUser(null);
+         console.warn(`User document for ${currentFirebaseUser.uid} still not found. Setting basic profile.`);
+         setUser({
+          uid: currentFirebaseUser.uid,
+          email: currentFirebaseUser.email,
+          displayName: currentFirebaseUser.displayName,
+          avatarUrl: currentFirebaseUser.photoURL,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          subscriptionStatus: 'none', 
+          trialEndsAt: null, 
+          subscriptionEndsAt: null,
+          trialExtensionUsed: false,
+        });
       }
-      setIsLoading(false);
+    } else {
+      setUser(null);
+      setFirebaseUserInstance(null);
+    }
+    setIsLoading(false);
+  }, []);
+
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentFirebaseUser) => {
+      fetchAndSetUser(currentFirebaseUser);
     });
     return () => unsubscribe();
-  }, []);
+  }, [fetchAndSetUser]);
+
+  const refreshAuthUser = useCallback(async () => {
+    if (firebaseUserInstance) {
+      setIsLoading(true);
+      await fetchAndSetUser(firebaseUserInstance); // Re-fetch and set user
+    }
+  }, [firebaseUserInstance, fetchAndSetUser]);
 
   const loginWithGoogle = async () => {
     try {
       setIsLoading(true);
       await signInWithPopup(auth, googleAuthProvider);
+      // onAuthStateChanged will handle setting user
     } catch (error) {
       console.error("Error signing in with Google:", error);
       setUser(null); 
@@ -184,10 +195,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await signOut(auth);
-      setUser(null);
-      setFirebaseUserInstance(null);
+      // onAuthStateChanged will handle setting user to null
     } catch (error) {
       console.error("Error signing out:", error);
+      setIsLoading(false); // Ensure loading is false on error
     }
   };
 
@@ -195,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await firebaseSignInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will handle setting user
     } catch (error: any) {
       console.error("Error signing in with email and password:", error);
       toast({ title: "Login Failed", description: error.message || "Invalid email or password.", variant: "destructive"});
@@ -205,7 +217,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signupWithEmailAndPassword = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      await createUserWithEmailAndPassword(auth, email, password);
+      await firebaseCreateUserWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will handle setting user
     } catch (error: any) {
       console.error("Error signing up with email and password:", error);
       toast({ title: "Signup Failed", description: error.message || "Could not create account.", variant: "destructive"});
@@ -216,7 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getUserIdToken = async (): Promise<string | null> => {
     if (firebaseUserInstance) {
       try {
-        return await firebaseUserInstance.getIdToken(true); // Force refresh
+        return await firebaseUserInstance.getIdToken(true);
       } catch (error) {
         console.error("Error getting ID token:", error);
         return null;
@@ -237,7 +250,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithEmailAndPassword,
       signupWithEmailAndPassword,
       isLoading,
-      getUserIdToken
+      getUserIdToken,
+      refreshAuthUser 
     }}>
       {children}
     </AuthContext.Provider>
@@ -252,7 +266,4 @@ export function useAuth() {
   return context;
 }
 
-// Helper for toast - assuming useToast is available globally or imported elsewhere
-// This is a simplified version, in a real app, you'd import useToast
 declare function toast(options: { title: string; description: string; variant?: "default" | "destructive"; duration?: number }): void;
-
