@@ -8,10 +8,14 @@ import {
   FileText,
   Link2,
   Wallet,
-  Settings, // Added Settings icon
+  Settings, 
   LogOut,
   UserCircle,
   ChevronDown,
+  Sparkles,
+  CheckCircle,
+  XCircle,
+  AlertTriangle as AlertTriangleIcon // Renamed to avoid conflict
 } from "lucide-react";
 import {
   Sidebar,
@@ -32,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { ThemeToggle } from "@/components/theme-toggle"; 
@@ -41,7 +46,7 @@ const navItems = [
   { href: "/contracts", label: "Contracts", icon: FileText },
   { href: "/integrations", label: "Integrations", icon: Link2 },
   { href: "/wallet", label: "Creator Wallet", icon: Wallet },
-  { href: "/settings", label: "Settings", icon: Settings }, // Added Settings item
+  { href: "/settings", label: "Settings", icon: Settings }, 
 ];
 
 export function SidebarNav() {
@@ -78,6 +83,27 @@ export function SidebarNav() {
 
   const activeUser = user; 
   const userInitial = activeUser?.displayName ? activeUser.displayName.charAt(0).toUpperCase() : (activeUser?.email ? activeUser.email.charAt(0).toUpperCase() : 'U');
+
+  const getSubscriptionBadge = () => {
+    if (!activeUser || !activeUser.subscriptionStatus || activeUser.subscriptionStatus === 'none') {
+      return null; 
+    }
+    switch (activeUser.subscriptionStatus) {
+      case 'active':
+        return <Badge variant="default" className="ml-2 text-xs px-1.5 py-0.5 bg-green-500 hover:bg-green-600 text-white group-data-[collapsible=icon]:hidden">Pro</Badge>;
+      case 'trialing':
+        return <Badge variant="secondary" className="ml-2 text-xs px-1.5 py-0.5 bg-blue-500 hover:bg-blue-600 text-white group-data-[collapsible=icon]:hidden">Trial</Badge>;
+      case 'past_due':
+        return <Badge variant="destructive" className="ml-2 text-xs px-1.5 py-0.5 group-data-[collapsible=icon]:hidden">Issue</Badge>;
+      case 'canceled':
+         return <Badge variant="outline" className="ml-2 text-xs px-1.5 py-0.5 group-data-[collapsible=icon]:hidden">Canceled</Badge>;
+      default:
+        return null;
+    }
+  };
+  
+  const subscriptionBadge = getSubscriptionBadge();
+
 
   return (
     <Sidebar collapsible="icon">
@@ -126,7 +152,10 @@ export function SidebarNav() {
                   <AvatarFallback>{userInitial}</AvatarFallback>
                 </Avatar>
                 <div className="ml-3 text-left group-data-[collapsible=icon]:hidden">
-                  <p className="text-sm font-medium truncate max-w-[120px]">{activeUser.displayName || 'User'}</p>
+                  <div className="flex items-center">
+                     <p className="text-sm font-medium truncate max-w-[100px]">{activeUser.displayName || 'User'}</p>
+                     {subscriptionBadge}
+                  </div>
                   <p className="text-xs text-muted-foreground truncate max-w-[120px]">{activeUser.email || 'No email'}</p>
                 </div>
                 <ChevronDown className="ml-auto h-4 w-4 group-data-[collapsible=icon]:hidden" />
@@ -162,3 +191,4 @@ export function SidebarNav() {
     </Sidebar>
   );
 }
+

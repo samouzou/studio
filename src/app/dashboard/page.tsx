@@ -2,14 +2,20 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useRouter, useSearchParams } from 'next/navigation';
 import type { DateRange } from "react-day-picker";
+import confetti from 'canvas-confetti';
+import Link from 'next/link';
+
 import { PageHeader } from "@/components/page-header";
 import { EarningsChart } from "@/components/dashboard/earnings-chart";
 import { AtRiskPayments } from "@/components/dashboard/at-risk-payments";
 import { UpcomingIncomeList } from "@/components/dashboard/upcoming-income";
 import { DashboardFilters, type DashboardFilterState } from "@/components/dashboard/dashboard-filters";
 import { SummaryCard } from "@/components/dashboard/summary-card";
-import { DollarSign, FileText, AlertCircle, CalendarCheck, Loader2, AlertTriangle, FileSpreadsheet, CheckCircle as CheckCircleIcon } from "lucide-react"; // Renamed CheckCircle to avoid conflict
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { DollarSign, FileText, AlertCircle, CalendarCheck, Loader2, AlertTriangle, FileSpreadsheet, CheckCircle as CheckCircleIcon, Sparkles, ExternalLink } from "lucide-react"; 
 import { useAuth } from "@/hooks/use-auth";
 import { db, collection, query, where, getDocs, Timestamp } from '@/lib/firebase';
 import type { Contract, EarningsDataPoint, UpcomingIncome, AtRiskPayment } from "@/types";
@@ -44,6 +50,9 @@ const initialFilterState: DashboardFilterState = {
 
 export default function DashboardPage() {
   const { user, isLoading: authLoading } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [allContracts, setAllContracts] = useState<Contract[]>([]);
   const [filters, setFilters] = useState<DashboardFilterState>(initialFilterState);
@@ -51,6 +60,18 @@ export default function DashboardPage() {
 
   const [availableBrands, setAvailableBrands] = useState<string[]>([]);
   const [availableProjects, setAvailableProjects] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (searchParams.get('subscription_success') === 'true') {
+      confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+      // Clean the URL
+      router.replace('/dashboard', { scroll: false });
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (user && !authLoading) {
@@ -156,13 +177,12 @@ export default function DashboardPage() {
       const mainStatus = c.status;
       const invoiceStatus = c.invoiceStatus || 'none';
       
-      // Determine effective status for risk assessment
       let effectiveStatusForRisk: Contract['status'] = mainStatus;
       let isActuallyOverdue = false;
 
       if (invoiceStatus === 'paid') {
         effectiveStatusForRisk = 'paid';
-      } else { // Not paid via invoice
+      } else { 
         if (mainStatus === 'overdue' || invoiceStatus === 'overdue') {
           effectiveStatusForRisk = 'overdue';
           isActuallyOverdue = true;
@@ -178,53 +198,43 @@ export default function DashboardPage() {
         currentTotalOverdueCountCalc++;
       }
 
-      // At Risk Payments
       if (isActuallyOverdue) {
         atRiskPaymentsListSource.push({
           id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate,
           status: 'overdue', riskReason: 'Payment overdue', projectName: c.projectName,
         });
-      } else if (effectiveStatusForRisk !== 'paid' && contractDueDate && contractDueDate < sevenDaysFromTodayMidnight) {
+      } else if (effectiveStatusForRisk !== 'paid' && contractDueDate && contractDueDate >= todayMidnight && contractDueDate < sevenDaysFromTodayMidnight) {
          atRiskPaymentsListSource.push({
           id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate,
           status: effectiveStatusForRisk, 
-          riskReason: contractDueDate < todayMidnight ? 'Payment overdue' : 'Due soon', 
+          riskReason: 'Due soon', 
           projectName: c.projectName,
         });
       }
 
-      // Pending Income & Upcoming Income List
-      if (contractDueDate && contractDueDate >= todayMidnight && 
-          (effectiveStatusForRisk === 'pending' || effectiveStatusForRisk === 'invoiced')) {
-        upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
-        totalPendingIncomeCalc += c.amount;
-      }
 
-      // Paid This Month (Collected This Month)
-      if (invoiceStatus === 'paid' && c.updatedAt instanceof Timestamp) {
-        const paymentDate = c.updatedAt.toDate();
+      if (contractDueDate && contractDueDate >= todayMidnight && 
+          (effectiveStatusForRisk === 'pending' || effectiveStatusForRisk === 'invoiced' || (effectiveStatusForRisk === 'overdue' && !isActuallyOverdue /* means due soon not yet overdue */ ))) {
+        upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
+        if (effectiveStatusForRisk !== 'paid') { // Only count non-paid as pending
+            totalPendingIncomeCalc += c.amount;
+        }
+      }
+      
+      if (invoiceStatus === 'paid' && c.updatedAt) {
+        const paymentDate = (c.updatedAt instanceof Timestamp) ? c.updatedAt.toDate() : new Date(c.updatedAt as any);
         if (paymentDate.getMonth() === currentMonth && paymentDate.getFullYear() === currentYear) {
           paidThisMonthAmountCalc += c.amount;
         }
       }
 
-      // Total Invoiced This Month
-      // Assuming invoice is "created" or "sent" in current month based on 'updatedAt'
-      // This might need a dedicated 'invoiceGeneratedAt' or 'invoiceSentAt' field for more accuracy
-      if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed' || invoiceStatus === 'draft' || invoiceStatus === 'overdue' || invoiceStatus === 'paid') && c.updatedAt instanceof Timestamp) {
-        const invoiceActionDate = c.updatedAt.toDate(); 
+      const invoiceActionDateSource = c.updatedAt || c.createdAt;
+      if ((invoiceStatus !== 'none' && invoiceStatus !== 'draft') && invoiceActionDateSource) {
+         const invoiceActionDate = (invoiceActionDateSource instanceof Timestamp) ? invoiceActionDateSource.toDate() : new Date(invoiceActionDateSource as any);
         if (invoiceActionDate.getMonth() === currentMonth && invoiceActionDate.getFullYear() === currentYear) {
             totalInvoicedThisMonthCalc += c.amount;
         }
-      } else if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed' || invoiceStatus === 'draft' || invoiceStatus === 'overdue' || invoiceStatus === 'paid') && c.createdAt instanceof Timestamp) {
-        // Fallback to createdAt if updatedAt isn't set yet for an invoiced item
-        const invoiceCreationDate = c.createdAt.toDate();
-        if (invoiceCreationDate.getMonth() === currentMonth && invoiceCreationDate.getFullYear() === currentYear) {
-            totalInvoicedThisMonthCalc += c.amount;
-        }
       }
-
-
     });
     
     upcomingIncomeSource.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
@@ -239,10 +249,10 @@ export default function DashboardPage() {
     setStats({
       totalPendingIncome: totalPendingIncomeCalc,
       upcomingIncomeCount: upcomingIncomeSource.length,
-      totalContractsCount: allContracts.length, // Using all contracts before filtering for this stat
+      totalContractsCount: allContracts.length, 
       atRiskPaymentsCount: atRiskPaymentsListSource.length,
       totalOverdueCount: currentTotalOverdueCountCalc,
-      paidThisMonthAmount: paidThisMonthAmountCalc, // This is effectively "collected this month"
+      paidThisMonthAmount: paidThisMonthAmountCalc, 
       upcomingIncomeList: upcomingIncomeSource,
       atRiskPaymentsList: atRiskPaymentsListSource,
       earningsChartData: MOCK_EARNINGS_DATA, 
@@ -306,7 +316,9 @@ export default function DashboardPage() {
     );
   }
   
-  if (!stats) return null; // Should be covered by above, but good for type safety
+  if (!stats) return null; 
+
+  const showSubscriptionCTA = user && user.subscriptionStatus !== 'active' && user.subscriptionStatus !== 'trialing';
 
   return (
     <>
@@ -314,6 +326,27 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Overview of your earnings, contracts, and payment timelines."
       />
+
+      {showSubscriptionCTA && (
+        <Alert className="mb-6 border-primary/50 bg-primary/5 text-primary-foreground [&>svg]:text-primary">
+          <Sparkles className="h-5 w-5" />
+          <AlertTitle className="font-semibold text-primary">Unlock Full Potential!</AlertTitle>
+          <AlertDescription className="text-primary/90">
+            {user.subscriptionStatus === 'canceled' ? 'Your Verza Pro subscription is canceled.' : 
+             user.subscriptionStatus === 'past_due' ? 'Your Verza Pro subscription payment is past due.' :
+             'You are currently on the free plan.'}
+            {' '}Upgrade to Verza Pro to access all features and manage your creator business seamlessly.
+          </AlertDescription>
+          <div className="mt-3">
+            <Button variant="default" size="sm" asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Link href="/settings">
+                {user.subscriptionStatus === 'canceled' || user.subscriptionStatus === 'past_due' ? 'Manage Subscription' : 'Upgrade to Pro'}
+                <ExternalLink className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </Alert>
+      )}
       
       <DashboardFilters 
         availableBrands={availableBrands} 
@@ -351,7 +384,7 @@ export default function DashboardPage() {
         <SummaryCard 
           title="Collected This Month (Filtered)" 
           value={`$${stats.totalCollectedThisMonth.toLocaleString()}`}
-          icon={CheckCircleIcon} // Use the renamed CheckCircleIcon
+          icon={CheckCircleIcon} 
           description="Based on invoices marked 'paid' this month"
         />
       </div>
@@ -371,3 +404,4 @@ export default function DashboardPage() {
     </>
   );
 }
+
