@@ -20,6 +20,7 @@ import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, S
 import Link from 'next/link';
 
 const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
+const CREATE_CHECKOUT_SESSION_FUNCTION_URL = "https://createstripecheckoutsession-vkwtxfkd2a-uc.a.run.app";
 
 
 export default function ManageInvoicePage() {
@@ -56,7 +57,6 @@ export default function ManageInvoicePage() {
             }
             setInvoiceNumber(data.invoiceNumber || `INV-${data.brand?.substring(0,3).toUpperCase() || 'AAA'}-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}-${id.substring(0,4).toUpperCase()}`);
             setInvoiceStatus(data.invoiceStatus || 'none');
-             // Set payUrl here after contract and invoiceNumber are available
             if (typeof window !== 'undefined') {
               setPayUrl(`${window.location.origin}/pay/contract/${id}`);
             }
@@ -77,14 +77,6 @@ export default function ManageInvoicePage() {
     }
   }, [id, user, authLoading, router, toast]);
   
-  // Effect to update payUrl if invoiceNumber changes (e.g. user edits it)
-  // Or if 'id' changes (though less likely for this page)
-  useEffect(() => {
-    if (id && typeof window !== 'undefined') {
-      setPayUrl(`${window.location.origin}/pay/contract/${id}`);
-    }
-  }, [id, invoiceNumber]);
-
 
   const handleGenerateInvoice = async () => {
     if (!contract || !user || !invoiceNumber) {
@@ -191,7 +183,7 @@ export default function ManageInvoicePage() {
 
     setIsSendingInvoice(true);
     try {
-      const idToken = await getUserIdToken();
+      const idToken = await getUserIdToken(); // Uses the new function from useAuth
       if (!idToken) {
         toast({ title: "Authentication Error", description: "Could not get user token. Please try again.", variant: "destructive" });
         setIsSendingInvoice(false);
@@ -199,12 +191,13 @@ export default function ManageInvoicePage() {
       }
 
       const invoiceContentToSend = generatedInvoiceHtml || contract.invoiceHtmlContent;
+      const currentPayUrl = typeof window !== 'undefined' ? `${window.location.origin}/pay/contract/${id}` : "";
       
       const emailBody = {
         to: contract.clientEmail,
         subject: `Invoice ${invoiceNumber || contract.invoiceNumber} from ${user.displayName || 'Your Service Provider'}`,
-        text: `Hello ${contract.clientName || contract.brand},\n\nPlease find attached your invoice ${invoiceNumber || contract.invoiceNumber} for ${contract.projectName || 'services rendered'}.\n\nTotal Amount Due: $${contract.amount}\nDue Date: ${new Date(contract.dueDate).toLocaleDateString()}\n\nClick here to pay: ${payUrl}\n\nThank you,\n${user.displayName || 'Your Service Provider'}`,
-        html: invoiceContentToSend, // The HTML already contains the pay now button with the payUrl link
+        text: `Hello ${contract.clientName || contract.brand},\n\nPlease find attached your invoice ${invoiceNumber || contract.invoiceNumber} for ${contract.projectName || 'services rendered'}.\n\nTotal Amount Due: $${contract.amount}\nDue Date: ${new Date(contract.dueDate).toLocaleDateString()}\n\nClick here to pay: ${currentPayUrl}\n\nThank you,\n${user.displayName || 'Your Service Provider'}`,
+        html: invoiceContentToSend, 
       };
 
       const response = await fetch(SEND_CONTRACT_NOTIFICATION_FUNCTION_URL, {
@@ -430,3 +423,4 @@ export default function ManageInvoicePage() {
   );
 }
 
+    
