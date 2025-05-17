@@ -164,9 +164,11 @@ export function SidebarNav() {
             <DropdownMenuContent side="top" align="start" className="w-56 mb-2 ml-2">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled>
-                <UserCircle className="mr-2 h-4 w-4" />
-                <span>Profile</span>
+              <DropdownMenuItem asChild>
+                <Link href="/profile">
+                  <UserCircle className="mr-2 h-4 w-4" />
+                  <span>Profile</span>
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/settings">
@@ -191,4 +193,3 @@ export function SidebarNav() {
     </Sidebar>
   );
 }
-
