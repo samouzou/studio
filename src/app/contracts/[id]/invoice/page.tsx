@@ -181,7 +181,7 @@ export default function ManageInvoicePage() {
       
       const emailBody = {
         to: contract.clientEmail,
-        subject: `Invoice ${invoiceNumber || contract.invoiceNumber} from ${contract.brand}`,
+        subject: `Invoice ${invoiceNumber || contract.invoiceNumber} from ${user.displayName || 'Your Service Provider'}`,
         text: `Hello ${contract.clientName || contract.brand},\n\nPlease find attached your invoice ${invoiceNumber || contract.invoiceNumber} for ${contract.projectName || 'services rendered'}.\n\nTotal Amount Due: $${contract.amount}\nDue Date: ${new Date(contract.dueDate).toLocaleDateString()}\n\nThank you,\n${user.displayName || 'Your Service Provider'}`,
         html: invoiceContentToSend,
       };
