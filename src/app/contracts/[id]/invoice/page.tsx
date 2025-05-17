@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-// import { getFunctions, httpsCallable } from 'firebase/functions'; // No longer using httpsCallable for payment
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { loadStripe } from '@stripe/stripe-js';
 import type { Contract } from '@/types';
 import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/generate-invoice-html-flow';
@@ -267,13 +267,8 @@ export default function ManageInvoicePage() {
         body: JSON.stringify({
           amount: contract.amount * 100, // Stripe expects amount in cents
           currency: 'usd', // Or from contract
-          // Pass contractId and userId in metadata
-          // Ensure your backend `createPaymentIntent` function expects and uses this metadata
-          // to pass it to Stripe's paymentIntent.create metadata.
-          metadata: { 
-            contractId: contract.id,
-            userId: user.uid,
-          }
+          contractId: contract.id, // Pass contractId directly in the body
+          // userId is handled by backend token verification
         }),
       });
 
@@ -443,7 +438,7 @@ export default function ManageInvoicePage() {
              <p className="text-xs text-muted-foreground">
                 Generating an invoice will use the contract details and the current invoice number. Saving will update the contract record. Sending marks the invoice as sent and attempts to email the client. The "Pay Now" link in the email will use: {payUrl || "generating..."}
                 <br />
-                For "Pay Invoice" button: ensure your backend `createPaymentIntent` function is correctly configured at {CREATE_PAYMENT_INTENT_FUNCTION_URL === "YOUR_CREATE_PAYMENT_INTENT_FUNCTION_URL_HERE" ? "the placeholder URL (needs update!)" : CREATE_PAYMENT_INTENT_FUNCTION_URL} and that it includes `contractId` in PaymentIntent metadata for webhook processing.
+                For "Pay Invoice" button: ensure your backend `createPaymentIntent` function is correctly configured at {CREATE_PAYMENT_INTENT_FUNCTION_URL} and that it includes `contractId` in PaymentIntent metadata for webhook processing.
              </p>
           </CardContent>
         </Card>
