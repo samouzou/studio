@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -7,7 +8,7 @@ import {
   FileText,
   Link2,
   Wallet,
-  Settings,
+  Settings, // Added Settings icon
   LogOut,
   UserCircle,
   ChevronDown,
@@ -33,13 +34,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { ThemeToggle } from "@/components/theme-toggle"; // Import ThemeToggle
+import { ThemeToggle } from "@/components/theme-toggle"; 
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/contracts", label: "Contracts", icon: FileText },
   { href: "/integrations", label: "Integrations", icon: Link2 },
   { href: "/wallet", label: "Creator Wallet", icon: Wallet },
+  { href: "/settings", label: "Settings", icon: Settings }, // Added Settings item
 ];
 
 export function SidebarNav() {
@@ -137,9 +139,11 @@ export function SidebarNav() {
                 <UserCircle className="mr-2 h-4 w-4" />
                 <span>Profile</span>
               </DropdownMenuItem>
-              <DropdownMenuItem disabled>
-                <Settings className="mr-2 h-4 w-4" />
-                <span>Settings</span>
+              <DropdownMenuItem asChild>
+                <Link href="/settings">
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>

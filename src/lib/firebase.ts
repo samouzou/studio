@@ -26,9 +26,10 @@ import {
   deleteDoc, 
   updateDoc,
   writeBatch,
-  onSnapshot // Added onSnapshot here
+  onSnapshot 
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions'; // Added getFunctions
 
 const firebaseConfigValues = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -39,7 +40,6 @@ const firebaseConfigValues = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Perform checks for essential Firebase configuration variables
 if (!firebaseConfigValues.apiKey) {
   throw new Error(
     "Firebase API Key (NEXT_PUBLIC_FIREBASE_API_KEY) is missing. " +
@@ -58,28 +58,25 @@ if (!firebaseConfigValues.projectId) {
 
 const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 
-// Initialize Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-
-const googleAuthProvider = new GoogleAuthProvider();
+const functions = getFunctions(app); // Initialize Firebase Functions
 
 export { 
   app, 
   auth, 
   db, 
   storage, 
+  functions, // Export functions
   googleAuthProvider, 
-  // Auth methods
   signInWithPopup,
   signOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   type FirebaseUser,
-  // Firestore methods
   collection, 
   doc, 
   setDoc, 
@@ -94,5 +91,5 @@ export {
   deleteDoc, 
   updateDoc,
   writeBatch,
-  onSnapshot // Added onSnapshot here
+  onSnapshot
 };
