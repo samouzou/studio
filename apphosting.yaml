@@ -1,11 +1,11 @@
 # Settings for Backend (on Cloud Run).
 # See https://firebase.google.com/docs/app-hosting/configure#cloud-run
 runConfig:
-  minInstances: 0
-  # maxInstances: 100
-  # concurrency: 80
-  # cpu: 1
-  # memoryMiB: 512
+  minInstances: 2
+  maxInstances: 100
+  concurrency: 80
+  cpu: 2
+  memoryMiB: 4096
 
   # Environment variables and secrets.
   # env:
@@ -24,6 +24,8 @@ runConfig:
 env:
   - variable: STRIPE_SECRET_KEY
     secret: stripe-secret-key
+
+  # Firebase
   - variable: GEMINI_API_KEY
     secret: AIzaSyACi8cAQ5v_O9seiX6CkfdPblxlQ4evKbI
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
