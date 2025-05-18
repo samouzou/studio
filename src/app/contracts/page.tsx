@@ -40,7 +40,15 @@ export default function ContractsPage() {
             createdAtTimestamp = data.createdAt;
           } else if (data.createdAt && typeof data.createdAt.seconds === 'number' && typeof data.createdAt.nanoseconds === 'number') {
             createdAtTimestamp = new Timestamp(data.createdAt.seconds, data.createdAt.nanoseconds);
-          } else {
+          } else if (typeof data.createdAt === 'string') { 
+            try {
+              createdAtTimestamp = Timestamp.fromDate(new Date(data.createdAt));
+            } catch (e) {
+              console.warn("Error parsing createdAt string, using current time for contract ID:", docSnap.id, data.createdAt);
+              createdAtTimestamp = Timestamp.now();
+            }
+          }
+          else {
             console.warn("Contract createdAt field was not a valid Timestamp, using current time as fallback. Document ID:", docSnap.id);
             createdAtTimestamp = Timestamp.now(); 
           }
@@ -51,7 +59,11 @@ export default function ContractsPage() {
           } else if (data.updatedAt && typeof data.updatedAt.seconds === 'number' && typeof data.updatedAt.nanoseconds === 'number') {
              updatedAtTimestamp = new Timestamp(data.updatedAt.seconds, data.updatedAt.nanoseconds);
           } else if (typeof data.updatedAt === 'string') {
-             updatedAtTimestamp = Timestamp.fromDate(new Date(data.updatedAt));
+             try {
+                updatedAtTimestamp = Timestamp.fromDate(new Date(data.updatedAt));
+             } catch(e) {
+                console.warn("Error parsing updatedAt string, using current time for contract ID:", docSnap.id, data.updatedAt);
+             }
           }
 
           return {
@@ -59,7 +71,7 @@ export default function ContractsPage() {
             ...data,
             createdAt: createdAtTimestamp, 
             updatedAt: updatedAtTimestamp,
-            status: data.status, // Use primary status directly
+            status: data.status || 'pending', // Use primary status, default to 'pending' if missing
             invoiceStatus: data.invoiceStatus || 'none',
           } as Contract;
         });
@@ -138,4 +150,3 @@ export default function ContractsPage() {
     </>
   );
 }
-
