@@ -1,20 +1,27 @@
 {
   "functions": {
-    "source": "functions"
+    "source": "functions",
+    "predeploy": [
+      "npm --prefix \"$RESOURCE_DIR\" run lint",
+      "npm --prefix \"$RESOURCE_DIR\" run build"
+    ]
   },
   "apphosting": {
     "backend": {
-      "function": "YOUR_FUNCTION_NAME"  // optional, only needed if you're using SSR or routing backend
+      // This "function" is an identifier for the App Hosting backend service
+      // that runs your Next.js app, as configured by apphosting.yaml.
+      // It's NOT a Cloud Function from your 'functions' directory.
+      // "nextApp" is a common placeholder or default ID.
+      "function": "nextApp"
     },
-    "app": {
-      "buildCommand": "npm run build",  // adjust based on your stack
-      "entry": "dist/index.html"        // or build/index.html if you're using Create React App
-    },
+    // The 'app' section is for PWAs deployed on App Hosting and is not needed
+    // for Next.js SSR applications where apphosting.yaml defines the build.
     "ignore": [
       "node_modules",
       ".git",
       "firebase-debug.log",
-      "firebase-debug.*.log"
+      "firebase-debug.*.log",
+      "functions" // Custom Cloud Functions are deployed separately
     ]
   }
 }
