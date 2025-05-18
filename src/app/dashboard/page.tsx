@@ -38,8 +38,6 @@ interface DashboardStats {
   upcomingIncomeList: UpcomingIncome[];
   atRiskPaymentsList: AtRiskPayment[];
   earningsChartData: EarningsDataPoint[];
-  // totalInvoicedThisMonth: number; // Commented out for simplification
-  // totalCollectedThisMonth: number; // Commented out for simplification
 }
 
 const initialFilterState: DashboardFilterState = {
@@ -107,7 +105,6 @@ export default function DashboardPage() {
               ...data,
               createdAt: createdAt,
               updatedAt: updatedAt,
-              invoiceStatus: data.invoiceStatus || 'none', // Keep for potential future use
             } as Contract;
           });
           setAllContracts(fetchedContracts);
@@ -169,18 +166,17 @@ export default function DashboardPage() {
     let totalPendingIncomeCalc = 0;
     let paidThisMonthAmountCalc = 0;
     let currentTotalOverdueCountCalc = 0;
-    // let totalInvoicedThisMonthCalc = 0; // Commented out for simplification
-
 
     filteredContracts.forEach(c => {
       const contractDueDate = c.dueDate ? new Date(c.dueDate + 'T00:00:00') : null;
-      const primaryStatus = c.status;
+      let primaryStatus = c.status; 
       
       let isEffectivelyOverdue = false;
       if (primaryStatus === 'overdue') {
         isEffectivelyOverdue = true;
       } else if (primaryStatus === 'pending' && contractDueDate && contractDueDate < todayMidnight) {
         isEffectivelyOverdue = true;
+        primaryStatus = 'overdue'; // Update primaryStatus for consistent logic below
       }
       
       if (isEffectivelyOverdue) {
@@ -198,21 +194,19 @@ export default function DashboardPage() {
         });
       }
 
-
       if (primaryStatus === 'pending' && contractDueDate && contractDueDate >= todayMidnight) {
         upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
         totalPendingIncomeCalc += c.amount;
       }
       
-      if (primaryStatus === 'paid' && contractDueDate) {
-        // Using dueDate as a proxy for payment month in this simplified model
-        if (contractDueDate.getMonth() === currentMonth && contractDueDate.getFullYear() === currentYear) {
+      if (primaryStatus === 'paid' && c.updatedAt) {
+        // For "Paid This Month", use updatedAt if available and status is 'paid'
+        // Assuming updatedAt reflects the payment confirmation date more accurately than dueDate
+        const paymentDate = c.updatedAt instanceof Timestamp ? c.updatedAt.toDate() : new Date(c.updatedAt || c.dueDate);
+        if (paymentDate.getMonth() === currentMonth && paymentDate.getFullYear() === currentYear) {
           paidThisMonthAmountCalc += c.amount;
         }
       }
-
-      // Logic for totalInvoicedThisMonth would be based on invoiceStatus and invoice creation/sent date
-      // For simplification, we are removing this for now.
     });
     
     upcomingIncomeSource.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
@@ -234,8 +228,6 @@ export default function DashboardPage() {
       upcomingIncomeList: upcomingIncomeSource,
       atRiskPaymentsList: atRiskPaymentsListSource,
       earningsChartData: MOCK_EARNINGS_DATA, 
-      // totalInvoicedThisMonth: totalInvoicedThisMonthCalc, // Commented out
-      // totalCollectedThisMonth: paidThisMonthAmountCalc, // Commented out
     });
 
   }, [allContracts, filters, user, isLoadingData]);
@@ -257,8 +249,8 @@ export default function DashboardPage() {
           onFiltersChange={handleFiltersChange}
           initialFilters={initialFilterState} 
         />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 mb-6"> {/* Adjusted for 3 cards */}
-          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mb-6">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
         </div>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
@@ -333,7 +325,7 @@ export default function DashboardPage() {
         initialFilters={filters}
       />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 mb-6"> {/* Adjusted for 3 cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mb-6">
         <SummaryCard 
           title="Pending Income (Filtered)" 
           value={`$${stats.totalPendingIncome.toLocaleString()}`}
@@ -353,20 +345,12 @@ export default function DashboardPage() {
           description={`${stats.totalOverdueCount} overdue`}
           className={stats.atRiskPaymentsCount > 0 ? "border-destructive text-destructive dark:border-destructive/70" : ""}
         />
-         {/* 
         <SummaryCard 
-          title="Invoiced This Month (Filtered)" 
-          value={`$${stats.totalInvoicedThisMonth.toLocaleString()}`}
-          icon={FileSpreadsheet}
-          description="Based on invoices updated this month"
-        />
-        <SummaryCard 
-          title="Collected This Month (Filtered)" 
-          value={`$${stats.totalCollectedThisMonth.toLocaleString()}`}
+          title="Paid This Month (Filtered)" 
+          value={`$${stats.paidThisMonthAmount.toLocaleString()}`}
           icon={CheckCircleIcon} 
-          description="Based on invoices marked 'paid' this month"
+          description="Based on contracts marked 'paid' this month"
         />
-        */}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -384,4 +368,3 @@ export default function DashboardPage() {
     </>
   );
 }
-
