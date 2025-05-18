@@ -10,8 +10,8 @@ runConfig:
 # Environment variables and secrets.
 env:
 
-  - variable: STORAGE_BUCKET
-    value: mybucket.firebasestorage.app
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: sololedger-lite.firebasestorage.app
     availability:
       - BUILD
       - RUNTIME
@@ -37,10 +37,6 @@ env:
 
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
     secret: VERZA_FIREBASE_PROJECT_ID
-
-
-  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-    secret: VERZA_FIREBASE_STORAGE_BUCKET
 
 
   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
