@@ -12,6 +12,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
 import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function LoginPage() {
   const { 
@@ -30,7 +31,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [resetEmail, setResetEmail] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [signupError, setSignupError] = useState<string | null>(null); // For signup form errors
+  const [signupError, setSignupError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -41,39 +42,54 @@ export default function LoginPage() {
 
   const handleGoogleLogin = async () => {
     setLoginError(null);
-    await loginWithGoogle(); // Errors handled by useAuth toast for Google login
+    setSignupError(null);
+    await loginWithGoogle();
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
+    setSignupError(null);
     const error = await loginWithEmailAndPassword(email, password);
     if (error) {
       setLoginError(error);
     }
-    // If no error, onAuthStateChanged will handle redirect via useEffect
   };
 
   const handlePasswordResetRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null); 
+    setSignupError(null);
     await sendPasswordReset(resetEmail);
-    // Toast is shown from useAuth
   };
 
-  // This combined loading state handles initial auth check and redirection post-auth
-  if (isLoading) {
+  if (isLoading && !isAuthenticated) { // Show skeleton for initial loading before auth state is known
      return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-secondary p-4">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Loading...</p>
+        <Card className="w-full max-w-md shadow-xl">
+          <CardHeader className="text-center">
+            <div className="mb-4 flex justify-center">
+              <Skeleton className="h-12 w-12 rounded-full" /> {/* Logo skeleton */}
+            </div>
+            <Skeleton className="h-8 w-3/4 mx-auto mb-2" /> {/* Title skeleton */}
+            <Skeleton className="h-4 w-full mx-auto" /> {/* Description skeleton */}
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <Skeleton className="h-10 w-full" /> {/* Button skeleton */}
+              <Skeleton className="h-px w-full my-2" /> {/* OR separator skeleton */}
+              <Skeleton className="h-10 w-full" /> {/* Email input skeleton */}
+              <Skeleton className="h-10 w-full" /> {/* Password input skeleton */}
+              <Skeleton className="h-10 w-full" /> {/* Button skeleton */}
+            </div>
+            <Skeleton className="h-4 w-3/4 mx-auto mt-4" /> {/* Footer link skeleton */}
+          </CardContent>
+        </Card>
       </div>
     );
   }
   
-  // If authenticated and not loading, redirecting (handled by useEffect)
-  // but we can show a loader here to prevent flashing the login form
-  if (!isLoading && isAuthenticated) {
+  if (isLoading && isAuthenticated) { // Show spinner for brief redirection phase
      return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-secondary p-4">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -109,7 +125,7 @@ export default function LoginPage() {
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Send Reset Link"}
       </Button>
-      <Button variant="link" onClick={() => { setIsPasswordResetView(false); setIsSignUpView(false); setLoginError(null); setSignupError(null); }} className="p-0 h-auto w-full">
+      <Button variant="link" type="button" onClick={() => { setIsPasswordResetView(false); setIsSignUpView(false); setLoginError(null); setSignupError(null); }} className="p-0 h-auto w-full">
         Back to Login
       </Button>
     </form>
@@ -167,7 +183,7 @@ export default function LoginPage() {
 
       <p className="mt-6 px-8 text-center text-sm text-muted-foreground">
         Don't have an account?{" "}
-        <Button variant="link" onClick={() => { setIsSignUpView(true); setIsPasswordResetView(false); setLoginError(null); setSignupError(null);}} className="p-0 h-auto">
+        <Button variant="link" type="button" onClick={() => { setIsSignUpView(true); setIsPasswordResetView(false); setLoginError(null); setSignupError(null);}} className="p-0 h-auto">
           Sign up with email
         </Button>
       </p>
@@ -176,8 +192,8 @@ export default function LoginPage() {
 
   const renderSignUpView = () => (
     <>
-      <SignUpForm onSignUpError={setSignupError} /> {/* Pass error setter */}
-      {signupError && ( // Display signup errors from SignUpForm if any (though it handles its own)
+      <SignUpForm onSignUpError={setSignupError} />
+      {signupError && (
          <Alert variant="destructive" className="my-4">
            <AlertTriangle className="h-4 w-4" />
            <AlertTitle>Sign Up Failed</AlertTitle>
@@ -186,7 +202,7 @@ export default function LoginPage() {
       )}
       <p className="mt-6 px-8 text-center text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Button variant="link" onClick={() => { setIsSignUpView(false); setIsPasswordResetView(false); setLoginError(null); setSignupError(null);}} className="p-0 h-auto">
+        <Button variant="link" type="button" onClick={() => { setIsSignUpView(false); setIsPasswordResetView(false); setLoginError(null); setSignupError(null);}} className="p-0 h-auto">
           Sign in
         </Button>
       </p>
