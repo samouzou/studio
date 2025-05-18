@@ -7,8 +7,8 @@ runConfig:
   # cpu: 1
   # memoryMiB: 512
 
-# Environment variables and secrets.
-# env:
+  # Environment variables and secrets.
+  # env:
   # Configure environment variables.
   # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
   # - variable: MESSAGE
@@ -21,3 +21,20 @@ runConfig:
   # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
   # - variable: MY_SECRET
   #   secret: mySecretRef
+env:
+  - variable: STRIPE_SECRET_KEY
+    secret: stripe-secret-key
+  - variable: GEMINI_API_KEY
+    secret: AIzaSyACi8cAQ5v_O9seiX6CkfdPblxlQ4evKbI
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    secret: AIzaSyCS-sj4_upH85EcIXeIMPr8O3wXbWtQi0M
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    secret: sololedger-lite.firebaseapp.com
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    secret: sololedger-lite
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    secret: sololedger-lite.firebasestorage.app
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    secret: 214498308071
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    secret: 1:214498308071:web:aa743fea23f08b043ad742
