@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useAuth } from "@/hooks/use-auth"; // Updated import
@@ -13,16 +14,24 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
+    // This effect handles redirection logic AFTER the initial loading state is resolved
+    // and for pages OTHER than /login.
+    // LoginPage has its own useEffect to handle redirection upon successful authentication.
     if (!isLoading && !isAuthenticated && pathname !== "/login") {
       router.push("/login");
     }
-    // Redirect authenticated users away from login page
-    if (!isLoading && isAuthenticated && pathname === "/login") {
-      router.push("/dashboard");
-    }
   }, [isAuthenticated, isLoading, router, pathname]);
 
+  // If on the login page, always render it.
+  // LoginPage itself will handle redirection if the user becomes authenticated.
+  // It will also use `useAuth().isLoading` for its internal loading states (e.g., disabling buttons).
+  if (pathname === "/login") {
+    return <>{children}</>;
+  }
+
+  // For all other pages:
   if (isLoading) {
+    // Show a loading skeleton during initial auth check or transitions.
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -34,16 +43,13 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  // If not authenticated and on login page, render children (login page itself)
-  if (!isAuthenticated && pathname === "/login") {
-    return <>{children}</>;
-  }
-  
-  // If authenticated and not on login page, wrap with AppLayout
-  if (isAuthenticated && pathname !== "/login") {
+  // If not loading, not on login page, and authenticated, show the app layout.
+  if (isAuthenticated) {
     return <AppLayout>{children}</AppLayout>;
   }
-
-  // Fallback for edge cases (e.g. redirecting)
+  
+  // If not loading, not on login page, and not authenticated,
+  // the useEffect above should have already initiated a redirect to /login.
+  // Returning null here prevents rendering anything further during the redirect.
   return null;
 }
