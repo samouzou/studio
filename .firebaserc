@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "sololedger-lite"
-  }
+    "default": "sololedger-lite",
+    "staging": "sololedger-lite"
+  },
+  "targets": {},
+  "etags": {}
 }

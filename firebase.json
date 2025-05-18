@@ -1,21 +1,20 @@
 {
+  "functions": {
+    "source": "functions"
+  },
   "apphosting": {
-    "backendId": "verza-backend",
-    "rootDir": "/",
+    "backend": {
+      "function": "YOUR_FUNCTION_NAME"  // optional, only needed if you're using SSR or routing backend
+    },
+    "app": {
+      "buildCommand": "npm run build",  // adjust based on your stack
+      "entry": "dist/index.html"        // or build/index.html if you're using Create React App
+    },
     "ignore": [
       "node_modules",
       ".git",
       "firebase-debug.log",
-      "firebase-debug.*.log",
-      "functions"
-    ]
-  },
-  "hosting": {
-    "public": "public",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
+      "firebase-debug.*.log"
     ]
   }
 }
