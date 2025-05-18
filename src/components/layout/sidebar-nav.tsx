@@ -46,7 +46,7 @@ const navItems = [
   { href: "/contracts", label: "Contracts", icon: FileText },
   { href: "/integrations", label: "Integrations", icon: Link2 },
   { href: "/wallet", label: "Creator Wallet", icon: Wallet },
-  { href: "/settings", label: "Settings", icon: Settings }, 
+  // { href: "/settings", label: "Settings", icon: Settings }, // Removed from main nav items
 ];
 
 export function SidebarNav() {
