@@ -63,7 +63,7 @@ export {
   db, 
   storage, 
   functions, 
-  googleAuthProvider, 
+  GoogleAuthProvider, 
   signInWithPopup,
   signOut,
   onAuthStateChanged,
