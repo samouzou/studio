@@ -7,45 +7,45 @@ runConfig:
   cpu: 2
   memoryMiB: 4096
 
-  # Environment variables and secrets.
-  # env:
-  # Configure environment variables.
-  # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
-  # - variable: MESSAGE
-  #   value: Hello world!
-  #   availability:
-  #     - BUILD
-  #     - RUNTIME
-
-
-
-  # Grant access to secrets in Cloud Secret Manager.
-  # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
-  # - variable: MY_SECRET
-  #   secret: mySecretRef
+# Environment variables and secrets.
 env:
 
+  - variable: STORAGE_BUCKET
+    value: mybucket.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+      
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
-      secret: VERZA_FIREBASE_API_KEY # This is the NAME of the secret in Secret Manager
-      availability:
-        - BUILD
-        - RUNTIME
+    secret: VERZA_FIREBASE_API_KEY # This is the NAME of the secret in Secret Manager
+    availability:
+      - BUILD
+      - RUNTIME
 
+  # Stripe key
   - variable: STRIPE_SECRET_KEY
     secret: stripe-secret-key
 
-  # Firebase
+  # Gemini
   - variable: GEMINI_API_KEY
-    secret: AIzaSyACi8cAQ5v_O9seiX6CkfdPblxlQ4evKbI
-  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
-    secret: AIzaSyCS-sj4_upH85EcIXeIMPr8O3wXbWtQi0M
+    secret: GEMINI_API_KEY
+
+  # Firebase
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-    secret: sololedger-lite.firebaseapp.com
+    secret: VERZA_FIREBASE_AUTH_DOMAIN
+
+
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
-    secret: sololedger-lite
+    secret: VERZA_FIREBASE_PROJECT_ID
+
+
   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-    secret: sololedger-lite.firebasestorage.app
+    secret: VERZA_FIREBASE_STORAGE_BUCKET
+
+
   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-    secret: 214498308071
+    secret: VERZA_FIREBASE_MESSAGING_SENDER_ID
+
+
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
-    secret: 1:214498308071:web:aa743fea23f08b043ad742
+    secret: VERZA_FIREBASE_APP_ID
