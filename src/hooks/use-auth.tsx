@@ -6,7 +6,6 @@ import { useState, useEffect, createContext, useContext, useCallback } from 'rea
 import { GoogleAuthProvider } from 'firebase/auth'; // Import class directly
 import { 
   auth, 
-  // GoogleAuthProvider, // Removed from here
   signInWithPopup, 
   signOut, 
   onAuthStateChanged, 
@@ -42,8 +41,8 @@ interface AuthContextType {
   user: UserProfile | null;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
-  loginWithEmailAndPassword: (email: string, password: string) => Promise<void>;
-  signupWithEmailAndPassword: (email: string, password: string) => Promise<void>;
+  loginWithEmailAndPassword: (email: string, password: string) => Promise<string | null>; // Updated return type
+  signupWithEmailAndPassword: (email: string, password: string) => Promise<string | null>; // Updated return type
   sendPasswordReset: (email: string) => Promise<void>;
   isLoading: boolean;
   getUserIdToken: () => Promise<string | null>;
@@ -96,21 +95,19 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
     
     let currentSubscriptionStatus = existingData.subscriptionStatus;
     if (currentSubscriptionStatus === undefined) {
-      updates.subscriptionStatus = 'none'; // Default to 'none' if not present
-      currentSubscriptionStatus = 'none'; // for further logic
+      updates.subscriptionStatus = 'none'; 
+      currentSubscriptionStatus = 'none'; 
     }
     
     let currentTrialEndsAt = existingData.trialEndsAt;
     if (currentTrialEndsAt === undefined && (currentSubscriptionStatus === 'none')) {
-      // If trialEndsAt is missing and they are not active/past_due etc., give them a trial
       const createdAt = existingData.createdAt instanceof Timestamp ? existingData.createdAt : Timestamp.now();
       currentTrialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
       updates.trialEndsAt = currentTrialEndsAt;
-      if (currentSubscriptionStatus === 'none') { // Only set to trialing if they were 'none'
+      if (currentSubscriptionStatus === 'none') { 
          updates.subscriptionStatus = 'trialing';
       }
     } else if (currentTrialEndsAt instanceof Timestamp && currentTrialEndsAt.toMillis() < Date.now() && currentSubscriptionStatus === 'trialing') {
-      // If trial has expired and they were trialing, set to none (or handle upgrade)
       updates.subscriptionStatus = 'none'; 
     }
 
@@ -161,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       } else {
          console.warn(`User document for ${currentFirebaseUser.uid} not found even after create attempt. Setting basic profile.`);
-         setUser({ // Fallback if user doc still not found
+         setUser({ 
           uid: currentFirebaseUser.uid,
           email: currentFirebaseUser.email,
           displayName: currentFirebaseUser.displayName,
@@ -185,9 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentFirebaseUser) => {
       await fetchAndSetUser(currentFirebaseUser);
-      // After the initial fetch, if a user exists and their doc might have been just created/updated
-      // we re-fetch to ensure the context has the very latest from Firestore, especially defaults.
-      if (currentFirebaseUser) {
+      if (currentFirebaseUser) { // Re-fetch after createUserDocument might have run
         await fetchAndSetUser(currentFirebaseUser);
       }
     });
@@ -203,12 +198,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = async () => {
     try {
       setIsLoading(true);
-      const provider = new GoogleAuthProvider(); // Instantiate locally
+      const provider = new GoogleAuthProvider(); 
       await signInWithPopup(auth, provider);
-      // onAuthStateChanged will handle setting user
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error signing in with Google:", error);
-      toast({ title: "Login Failed", description: (error as Error).message || "Could not sign in with Google.", variant: "destructive"});
+      toast({ title: "Login Failed", description: error.message || "Could not sign in with Google.", variant: "destructive"});
       setUser(null); 
       setIsLoading(false);
     }
@@ -218,32 +212,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await signOut(auth);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error signing out:", error);
-      toast({ title: "Logout Failed", description: (error as Error).message, variant: "destructive"});
+      toast({ title: "Logout Failed", description: error.message, variant: "destructive"});
       setIsLoading(false); 
     }
   };
 
-  const loginWithEmailAndPassword = async (email: string, password: string) => {
+  const loginWithEmailAndPassword = async (email: string, password: string): Promise<string | null> => {
     try {
       setIsLoading(true);
       await firebaseSignInWithEmailAndPassword(auth, email, password);
+      setIsLoading(false); // setLoading to false on success too, onAuthStateChanged will handle user state
+      return null; // Success
     } catch (error: any) {
       console.error("Error signing in with email and password:", error);
-      toast({ title: "Login Failed", description: error.message || "Invalid email or password.", variant: "destructive"});
       setIsLoading(false);
+      // Map Firebase error codes to user-friendly messages
+      switch (error.code) {
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+          return 'Invalid email or password. Please try again.';
+        case 'auth/invalid-email':
+          return 'The email address is not valid.';
+        default:
+          return error.message || "An unexpected error occurred during login.";
+      }
     }
   };
 
-  const signupWithEmailAndPassword = async (email: string, password: string) => {
+  const signupWithEmailAndPassword = async (email: string, password: string): Promise<string | null> => {
     try {
       setIsLoading(true);
       await firebaseCreateUserWithEmailAndPassword(auth, email, password);
+      setIsLoading(false); // setLoading to false on success too
+      return null; // Success
     } catch (error: any) {
       console.error("Error signing up with email and password:", error);
-      toast({ title: "Signup Failed", description: error.message || "Could not create account.", variant: "destructive"});
       setIsLoading(false);
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          return 'This email address is already in use.';
+        case 'auth/invalid-email':
+          return 'The email address is not valid.';
+        case 'auth/weak-password':
+          return 'The password is too weak. It must be at least 6 characters.';
+        default:
+          return error.message || "An unexpected error occurred during sign up.";
+      }
     }
   };
 

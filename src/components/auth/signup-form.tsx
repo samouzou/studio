@@ -6,20 +6,34 @@ import { useAuth } from '@/hooks/use-auth';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Added Alert components
 
 export const SignUpForm: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [signupError, setSignupError] = useState<string | null>(null); // For signup errors
   const { signupWithEmailAndPassword, isLoading } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    await signupWithEmailAndPassword(email, password);
+    setSignupError(null); // Clear previous errors
+    const error = await signupWithEmailAndPassword(email, password);
+    if (error) {
+      setSignupError(error);
+    }
+    // If no error, onAuthStateChanged will handle redirect/user state
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {signupError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Sign Up Failed</AlertTitle>
+          <AlertDescription>{signupError}</AlertDescription>
+        </Alert>
+      )}
       <div className="grid gap-2">
         <Label htmlFor="signup-email">Email</Label>
         <Input
@@ -38,7 +52,7 @@ export const SignUpForm: React.FC = () => {
           id="signup-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••"
+          placeholder="•••••••• (min. 6 characters)"
           required
         />
       </div>

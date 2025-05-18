@@ -8,9 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react"; // Added AlertTriangle
 import { useEffect, useState } from "react";
 import Link from 'next/link';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Added Alert components
 
 export default function LoginPage() {
   const { 
@@ -18,7 +19,6 @@ export default function LoginPage() {
     loginWithEmailAndPassword, 
     isAuthenticated, 
     isLoading, 
-    signupWithEmailAndPassword,
     sendPasswordReset 
   } = useAuth();
   
@@ -27,7 +27,8 @@ export default function LoginPage() {
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [resetEmail, setResetEmail] = useState(''); // For password reset input
+  const [resetEmail, setResetEmail] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null); // For login errors
   const router = useRouter();
 
   useEffect(() => {
@@ -37,19 +38,25 @@ export default function LoginPage() {
   }, [isAuthenticated, isLoading, router]);
 
   const handleGoogleLogin = async () => {
+    setLoginError(null); // Clear previous errors
     await loginWithGoogle();
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    await loginWithEmailAndPassword(email, password);
+    setLoginError(null); // Clear previous errors
+    const error = await loginWithEmailAndPassword(email, password);
+    if (error) {
+      setLoginError(error);
+    }
+    // If no error, onAuthStateChanged will handle redirect via useEffect
   };
 
   const handlePasswordResetRequest = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError(null); // Clear previous errors
     await sendPasswordReset(resetEmail);
-    setIsPasswordResetView(false); // Optionally go back to login view
-    setResetEmail(''); // Clear the input
+    // Toast is shown from useAuth, user stays on this view to see it
   };
 
   if (isLoading || (!isLoading && isAuthenticated)) {
@@ -63,6 +70,13 @@ export default function LoginPage() {
 
   const renderPasswordResetView = () => (
     <form onSubmit={handlePasswordResetRequest} className="space-y-4">
+      {loginError && ( // Display general errors for password reset if any
+        <Alert variant="destructive" className="mb-4">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{loginError}</AlertDescription>
+        </Alert>
+      )}
       <p className="text-center text-muted-foreground">
         Enter your email address and we'll send you a link to reset your password.
       </p>
@@ -80,7 +94,7 @@ export default function LoginPage() {
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Send Reset Link"}
       </Button>
-      <Button variant="link" onClick={() => { setIsPasswordResetView(false); setIsSignUpView(false); }} className="p-0 h-auto w-full">
+      <Button variant="link" onClick={() => { setIsPasswordResetView(false); setIsSignUpView(false); setLoginError(null); }} className="p-0 h-auto w-full">
         Back to Login
       </Button>
     </form>
@@ -91,8 +105,15 @@ export default function LoginPage() {
       <p className="text-center text-muted-foreground">
         Access your dashboard by signing in.
       </p>
+      {loginError && (
+        <Alert variant="destructive" className="my-4">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Login Failed</AlertTitle>
+          <AlertDescription>{loginError}</AlertDescription>
+        </Alert>
+      )}
       <Button onClick={handleGoogleLogin} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" size="lg" disabled={isLoading}>
-        {isLoading && email === "" ? ( // Show spinner only if this button caused loading
+        {isLoading && email === "" ? ( 
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : (
           <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512"><path fill="currentColor" d="M488 261.8C488 403.3 381.5 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path></svg>
@@ -114,14 +135,14 @@ export default function LoginPage() {
         <div className="grid gap-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="password-login">Password</Label>
-            <Button variant="link" type="button" onClick={() => setIsPasswordResetView(true)} className="p-0 h-auto text-xs">
+            <Button variant="link" type="button" onClick={() => { setIsPasswordResetView(true); setLoginError(null); }} className="p-0 h-auto text-xs">
               Forgot password?
             </Button>
           </div>
           <Input id="password-login" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
         <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading && email !== "" ? ( // Show spinner only if this button caused loading
+          {isLoading && email !== "" ? ( 
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             "Sign In with Email"
@@ -131,7 +152,7 @@ export default function LoginPage() {
 
       <p className="mt-6 px-8 text-center text-sm text-muted-foreground">
         Don't have an account?{" "}
-        <Button variant="link" onClick={() => { setIsSignUpView(true); setIsPasswordResetView(false); }} className="p-0 h-auto">
+        <Button variant="link" onClick={() => { setIsSignUpView(true); setIsPasswordResetView(false); setLoginError(null);}} className="p-0 h-auto">
           Sign up with email
         </Button>
       </p>
@@ -143,7 +164,7 @@ export default function LoginPage() {
       <SignUpForm />
       <p className="mt-6 px-8 text-center text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Button variant="link" onClick={() => { setIsSignUpView(false); setIsPasswordResetView(false);}} className="p-0 h-auto">
+        <Button variant="link" onClick={() => { setIsSignUpView(false); setIsPasswordResetView(false); setLoginError(null);}} className="p-0 h-auto">
           Sign in
         </Button>
       </p>
