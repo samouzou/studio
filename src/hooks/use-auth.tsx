@@ -3,22 +3,26 @@
 
 import type { ReactNode } from 'react';
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import { GoogleAuthProvider } from 'firebase/auth'; // Import class directly
 import { 
   auth, 
-  GoogleAuthProvider, 
+  // GoogleAuthProvider, // Removed from here
   signInWithPopup, 
   signOut, 
   onAuthStateChanged, 
   createUserWithEmailAndPassword as firebaseCreateUserWithEmailAndPassword, 
   signInWithEmailAndPassword as firebaseSignInWithEmailAndPassword, 
+  sendPasswordResetEmail as firebaseSendPasswordResetEmail,
+  updateProfile as firebaseUpdateProfile,
   type FirebaseUser,
   db,
   doc,
   setDoc,
   getDoc,
   Timestamp,
-  updateProfile as firebaseUpdateProfile
 } from '@/lib/firebase';
+import { useToast } from "@/hooks/use-toast";
+
 
 export interface UserProfile {
   uid: string;
@@ -40,6 +44,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   loginWithEmailAndPassword: (email: string, password: string) => Promise<void>;
   signupWithEmailAndPassword: (email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
   isLoading: boolean;
   getUserIdToken: () => Promise<string | null>;
   refreshAuthUser: () => Promise<void>;
@@ -47,25 +52,22 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-async function createUserDocument(firebaseUser: FirebaseUser) {
+const createUserDocument = async (firebaseUser: FirebaseUser) => {
   if (!firebaseUser) return;
   const userDocRef = doc(db, 'users', firebaseUser.uid);
   const userDocSnap = await getDoc(userDocRef);
 
   if (!userDocSnap.exists()) {
-    const { uid, email, displayName, photoURL } = firebaseUser;
+    const { uid, email } = firebaseUser;
     const createdAt = Timestamp.now();
-    let trialEndsAtTimestamp: Timestamp | null = null;
-    
-    // New users get a 7-day trial by default
-    trialEndsAtTimestamp = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
+    let trialEndsAtTimestamp: Timestamp | null = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
 
     try {
       await setDoc(userDocRef, {
         uid,
         email,
-        displayName: displayName || email?.split('@')[0] || 'User',
-        avatarUrl: photoURL || null,
+        displayName: firebaseUser.displayName || email?.split('@')[0] || 'User',
+        avatarUrl: firebaseUser.photoURL || null,
         createdAt,
         stripeCustomerId: null,
         stripeSubscriptionId: null,
@@ -79,11 +81,9 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
       console.error("Error creating user document in Firestore:", error);
     }
   } else {
-    // User document exists, check for updates or missing fields
     const existingData = userDocSnap.data();
     const updates: Partial<UserProfile> = {};
     
-    // Update avatar or display name if changed in Firebase Auth (e.g. from Google profile)
     if (firebaseUser.photoURL && existingData.avatarUrl !== firebaseUser.photoURL) {
       updates.avatarUrl = firebaseUser.photoURL;
     }
@@ -91,28 +91,33 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
       updates.displayName = firebaseUser.displayName;
     }
 
-    // Initialize missing subscription fields for older users
     if (existingData.stripeCustomerId === undefined) updates.stripeCustomerId = null;
     if (existingData.stripeSubscriptionId === undefined) updates.stripeSubscriptionId = null;
     
-    if (existingData.subscriptionStatus === undefined) {
-        updates.subscriptionStatus = 'none'; // Default to 'none' if no status
+    let currentSubscriptionStatus = existingData.subscriptionStatus;
+    if (currentSubscriptionStatus === undefined) {
+      updates.subscriptionStatus = 'none'; // Default to 'none' if not present
+      currentSubscriptionStatus = 'none'; // for further logic
     }
     
-    if (existingData.trialEndsAt === undefined && (updates.subscriptionStatus === 'none' || existingData.subscriptionStatus === 'none')) {
-        // Give old users a trial if they have no subscription status or it's 'none'
-        const createdAt = existingData.createdAt instanceof Timestamp ? existingData.createdAt : Timestamp.now();
-        updates.trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
-        if (updates.subscriptionStatus === 'none' || existingData.subscriptionStatus === 'none') {
-           updates.subscriptionStatus = 'trialing';
-        }
-    } else if (existingData.trialEndsAt instanceof Timestamp && existingData.trialEndsAt.toMillis() < Date.now() && existingData.subscriptionStatus === 'trialing') {
+    let currentTrialEndsAt = existingData.trialEndsAt;
+    if (currentTrialEndsAt === undefined && (currentSubscriptionStatus === 'none')) {
+      // If trialEndsAt is missing and they are not active/past_due etc., give them a trial
+      const createdAt = existingData.createdAt instanceof Timestamp ? existingData.createdAt : Timestamp.now();
+      currentTrialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
+      updates.trialEndsAt = currentTrialEndsAt;
+      if (currentSubscriptionStatus === 'none') { // Only set to trialing if they were 'none'
+         updates.subscriptionStatus = 'trialing';
+      }
+    } else if (currentTrialEndsAt instanceof Timestamp && currentTrialEndsAt.toMillis() < Date.now() && currentSubscriptionStatus === 'trialing') {
+      // If trial has expired and they were trialing, set to none (or handle upgrade)
       updates.subscriptionStatus = 'none'; 
     }
 
 
     if (existingData.subscriptionEndsAt === undefined) updates.subscriptionEndsAt = null;
     if (existingData.trialExtensionUsed === undefined) updates.trialExtensionUsed = false;
+
 
     if (Object.keys(updates).length > 0) {
       try {
@@ -123,20 +128,20 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
       }
     }
   }
-}
+};
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [firebaseUserInstance, setFirebaseUserInstance] = useState<FirebaseUser | null>(null);
+  const { toast } = useToast();
 
   const fetchAndSetUser = useCallback(async (currentFirebaseUser: FirebaseUser | null) => {
     if (currentFirebaseUser) {
       setFirebaseUserInstance(currentFirebaseUser);
       await createUserDocument(currentFirebaseUser); 
       
-      // Re-fetch the user document from Firestore to get the most up-to-date data
-      // This ensures any defaults set by createUserDocument for existing users are immediately reflected
       const userDocRef = doc(db, 'users', currentFirebaseUser.uid);
       const userDocSnap = await getDoc(userDocRef);
 
@@ -155,9 +160,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           trialExtensionUsed: firestoreUserData.trialExtensionUsed || false,
         });
       } else {
-         // This case should be rare now due to createUserDocument
-         console.warn(`User document for ${currentFirebaseUser.uid} still not found after create attempt. Setting basic profile.`);
-         setUser({
+         console.warn(`User document for ${currentFirebaseUser.uid} not found even after create attempt. Setting basic profile.`);
+         setUser({ // Fallback if user doc still not found
           uid: currentFirebaseUser.uid,
           email: currentFirebaseUser.email,
           displayName: currentFirebaseUser.displayName,
@@ -179,33 +183,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentFirebaseUser) => {
-      fetchAndSetUser(currentFirebaseUser);
+    const unsubscribe = onAuthStateChanged(auth, async (currentFirebaseUser) => {
+      await fetchAndSetUser(currentFirebaseUser);
+      // After the initial fetch, if a user exists and their doc might have been just created/updated
+      // we re-fetch to ensure the context has the very latest from Firestore, especially defaults.
+      if (currentFirebaseUser) {
+        await fetchAndSetUser(currentFirebaseUser);
+      }
     });
     return () => unsubscribe();
   }, [fetchAndSetUser]);
 
   const refreshAuthUser = useCallback(async () => {
-    const currentFbUser = auth.currentUser; // Get the latest Firebase user instance
-    if (currentFbUser) {
-      setIsLoading(true);
-      // Optionally force refresh the token
-      // await currentFbUser.getIdToken(true); 
-      await fetchAndSetUser(currentFbUser);
-    } else {
-      // If no Firebase user, ensure local state is also null
-      await fetchAndSetUser(null);
-    }
+    const currentFbUser = auth.currentUser;
+    setIsLoading(true);
+    await fetchAndSetUser(currentFbUser);
   }, [fetchAndSetUser]);
 
   const loginWithGoogle = async () => {
     try {
       setIsLoading(true);
-      const provider = new GoogleAuthProvider(); // Instantiate the provider
+      const provider = new GoogleAuthProvider(); // Instantiate locally
       await signInWithPopup(auth, provider);
       // onAuthStateChanged will handle setting user
     } catch (error) {
       console.error("Error signing in with Google:", error);
+      toast({ title: "Login Failed", description: (error as Error).message || "Could not sign in with Google.", variant: "destructive"});
       setUser(null); 
       setIsLoading(false);
     }
@@ -215,9 +218,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await signOut(auth);
-      // onAuthStateChanged will handle setting user to null
     } catch (error) {
       console.error("Error signing out:", error);
+      toast({ title: "Logout Failed", description: (error as Error).message, variant: "destructive"});
       setIsLoading(false); 
     }
   };
@@ -226,7 +229,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await firebaseSignInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle setting user
     } catch (error: any) {
       console.error("Error signing in with email and password:", error);
       toast({ title: "Login Failed", description: error.message || "Invalid email or password.", variant: "destructive"});
@@ -238,7 +240,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await firebaseCreateUserWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle setting user
     } catch (error: any) {
       console.error("Error signing up with email and password:", error);
       toast({ title: "Signup Failed", description: error.message || "Could not create account.", variant: "destructive"});
@@ -246,10 +247,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const sendPasswordReset = async (email: string) => {
+    setIsLoading(true);
+    try {
+      await firebaseSendPasswordResetEmail(auth, email);
+      toast({
+        title: "Password Reset Email Sent",
+        description: "If an account exists for this email, a password reset link has been sent.",
+      });
+    } catch (error: any) {
+      console.error("Error sending password reset email:", error);
+      toast({
+        title: "Password Reset Failed",
+        description: error.message || "Could not send password reset email. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
   const getUserIdToken = async (): Promise<string | null> => {
     if (firebaseUserInstance) {
       try {
-        return await firebaseUserInstance.getIdToken(true); // Force refresh token
+        return await firebaseUserInstance.getIdToken(true);
       } catch (error) {
         console.error("Error getting ID token:", error);
         return null;
@@ -269,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       loginWithEmailAndPassword,
       signupWithEmailAndPassword,
+      sendPasswordReset,
       isLoading,
       getUserIdToken,
       refreshAuthUser 
@@ -285,7 +308,3 @@ export function useAuth() {
   }
   return context;
 }
-
-// @ts-ignore
-declare function toast(options: { title: string; description: string; variant?: "default" | "destructive"; duration?: number }): void;
-

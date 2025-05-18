@@ -9,6 +9,7 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
   updateProfile, // Added for updating Auth user profile
+  sendPasswordResetEmail, // Added for password reset
   type User as FirebaseUser 
 } from 'firebase/auth';
 import { 
@@ -56,6 +57,8 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app); // Initialize Firebase Storage
 const functions = getFunctions(app); 
+const googleAuthProvider = new GoogleAuthProvider(); // Instantiate GoogleAuthProvider
+
 
 export { 
   app, 
@@ -63,13 +66,14 @@ export {
   db, 
   storage, 
   functions, 
-  GoogleAuthProvider, 
+  googleAuthProvider, 
   signInWithPopup,
   signOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updateProfile, // Export updateProfile for Auth
+  sendPasswordResetEmail, // Exporting sendPasswordResetEmail
+  updateProfile, 
   type FirebaseUser,
   collection, 
   doc, 
@@ -86,7 +90,6 @@ export {
   updateDoc,
   writeBatch,
   onSnapshot,
-  // Export Storage functions if needed directly by components, though often wrapped
   ref as storageRef, 
   uploadBytes, 
   getDownloadURL
