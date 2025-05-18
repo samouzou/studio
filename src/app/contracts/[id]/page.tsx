@@ -197,19 +197,6 @@ export default function ContractDetailPage() {
                                     contract.negotiationSuggestions.ipRights ||
                                     (contract.negotiationSuggestions.generalSuggestions && contract.negotiationSuggestions.generalSuggestions.length > 0));
 
-  let effectiveDisplayStatus: Contract['status'] = contract.status;
-  if (contract.invoiceStatus === 'paid') {
-      effectiveDisplayStatus = 'paid';
-  } else if (contract.status !== 'paid') { // Only override if contract itself isn't already marked as paid
-      if (contract.invoiceStatus === 'overdue') {
-          effectiveDisplayStatus = 'overdue';
-      } else if (contract.invoiceStatus === 'sent' || contract.invoiceStatus === 'viewed') {
-          if (contract.status === 'pending') {
-             effectiveDisplayStatus = 'invoiced';
-          }
-      }
-  }
-
   return (
     <>
       <PageHeader
@@ -222,11 +209,13 @@ export default function ContractDetailPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Link>
             </Button>
-             <Button variant="secondary" asChild>
+            {/* 
+            <Button variant="secondary" asChild>
               <Link href={`/contracts/${contract.id}/invoice`}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" /> Manage Invoice
               </Link>
             </Button>
+            */}
             <Button variant="outline" disabled><Edit3 className="mr-2 h-4 w-4" /> Edit</Button>
             <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
               <AlertDialogTrigger asChild>
@@ -262,7 +251,7 @@ export default function ContractDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>Key Information</span>
-                <ContractStatusBadge status={effectiveDisplayStatus} />
+                <ContractStatusBadge status={contract.status} /> 
               </CardTitle>
               <CardDescription>Core details of the agreement with {contract.brand}.</CardDescription>
             </CardHeader>
@@ -285,6 +274,7 @@ export default function ContractDetailPage() {
                   } 
                 />
               )}
+              {/* 
               {contract.invoiceNumber && (
                 <DetailItem icon={FileSpreadsheet} label="Invoice Number" value={contract.invoiceNumber} />
               )}
@@ -295,6 +285,7 @@ export default function ContractDetailPage() {
                     value={<Badge variant="outline" className="capitalize">{contract.invoiceStatus.replace('_', ' ')}</Badge>} 
                  />
               )}
+              */}
             </CardContent>
           </Card>
 
@@ -399,5 +390,4 @@ export default function ContractDetailPage() {
     </>
   );
 }
-
     

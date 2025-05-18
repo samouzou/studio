@@ -54,32 +54,13 @@ export default function ContractsPage() {
              updatedAtTimestamp = Timestamp.fromDate(new Date(data.updatedAt));
           }
 
-          // Calculate effective display status
-          let effectiveDisplayStatus: Contract['status'] = data.status;
-          const invoiceStatus = data.invoiceStatus || 'none';
-          const mainStatus = data.status;
-          const dueDate = data.dueDate;
-          const todayMidnight = new Date(new Date().setHours(0,0,0,0));
-          const contractDueDate = dueDate ? new Date(dueDate + 'T00:00:00') : null;
-
-          if (invoiceStatus === 'paid') {
-              effectiveDisplayStatus = 'paid';
-          } else if (mainStatus !== 'paid') {
-              if (mainStatus === 'overdue' || invoiceStatus === 'overdue' || (contractDueDate && contractDueDate < todayMidnight && (invoiceStatus === 'sent' || invoiceStatus === 'viewed'))) {
-                  effectiveDisplayStatus = 'overdue';
-              } else if (mainStatus === 'pending' && (invoiceStatus === 'sent' || invoiceStatus === 'viewed')) {
-                  effectiveDisplayStatus = 'invoiced';
-              }
-          }
-
-
           return {
             id: docSnap.id,
             ...data,
             createdAt: createdAtTimestamp, 
             updatedAt: updatedAtTimestamp,
-            status: effectiveDisplayStatus, // Overwrite status with effective status for display
-            invoiceStatus: invoiceStatus, // ensure invoiceStatus is part of the returned object
+            status: data.status, // Use primary status directly
+            invoiceStatus: data.invoiceStatus || 'none',
           } as Contract;
         });
         setContracts(contractList);
