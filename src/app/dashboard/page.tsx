@@ -38,8 +38,8 @@ interface DashboardStats {
   upcomingIncomeList: UpcomingIncome[];
   atRiskPaymentsList: AtRiskPayment[];
   earningsChartData: EarningsDataPoint[];
-  totalInvoicedThisMonth: number;
-  totalCollectedThisMonth: number;
+  // totalInvoicedThisMonth: number; // Commented out for simplification
+  // totalCollectedThisMonth: number; // Commented out for simplification
 }
 
 const initialFilterState: DashboardFilterState = {
@@ -107,7 +107,7 @@ export default function DashboardPage() {
               ...data,
               createdAt: createdAt,
               updatedAt: updatedAt,
-              invoiceStatus: data.invoiceStatus || 'none',
+              invoiceStatus: data.invoiceStatus || 'none', // Keep for potential future use
             } as Contract;
           });
           setAllContracts(fetchedContracts);
@@ -169,72 +169,50 @@ export default function DashboardPage() {
     let totalPendingIncomeCalc = 0;
     let paidThisMonthAmountCalc = 0;
     let currentTotalOverdueCountCalc = 0;
-    let totalInvoicedThisMonthCalc = 0;
+    // let totalInvoicedThisMonthCalc = 0; // Commented out for simplification
 
 
     filteredContracts.forEach(c => {
       const contractDueDate = c.dueDate ? new Date(c.dueDate + 'T00:00:00') : null;
-      const mainStatus = c.status;
-      const invoiceStatus = c.invoiceStatus || 'none';
+      const primaryStatus = c.status;
       
-      let effectiveStatusForRisk: Contract['status'] = mainStatus;
-      let isActuallyOverdue = false;
-
-      if (invoiceStatus === 'paid') {
-        effectiveStatusForRisk = 'paid';
-      } else { 
-        if (mainStatus === 'overdue' || invoiceStatus === 'overdue') {
-          effectiveStatusForRisk = 'overdue';
-          isActuallyOverdue = true;
-        } else if (contractDueDate && contractDueDate < todayMidnight && (invoiceStatus === 'sent' || invoiceStatus === 'viewed')) {
-          effectiveStatusForRisk = 'overdue';
-          isActuallyOverdue = true;
-        } else if (mainStatus === 'pending' && (invoiceStatus === 'sent' || invoiceStatus === 'viewed')) {
-          effectiveStatusForRisk = 'invoiced';
-        }
+      let isEffectivelyOverdue = false;
+      if (primaryStatus === 'overdue') {
+        isEffectivelyOverdue = true;
+      } else if (primaryStatus === 'pending' && contractDueDate && contractDueDate < todayMidnight) {
+        isEffectivelyOverdue = true;
       }
       
-      if (isActuallyOverdue) {
+      if (isEffectivelyOverdue) {
         currentTotalOverdueCountCalc++;
-      }
-
-      if (isActuallyOverdue) {
         atRiskPaymentsListSource.push({
           id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate,
           status: 'overdue', riskReason: 'Payment overdue', projectName: c.projectName,
         });
-      } else if (effectiveStatusForRisk !== 'paid' && contractDueDate && contractDueDate >= todayMidnight && contractDueDate < sevenDaysFromTodayMidnight) {
+      } else if (primaryStatus === 'pending' && contractDueDate && contractDueDate >= todayMidnight && contractDueDate < sevenDaysFromTodayMidnight) {
          atRiskPaymentsListSource.push({
           id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate,
-          status: effectiveStatusForRisk, 
+          status: primaryStatus, 
           riskReason: 'Due soon', 
           projectName: c.projectName,
         });
       }
 
 
-      if (contractDueDate && contractDueDate >= todayMidnight && 
-          (effectiveStatusForRisk === 'pending' || effectiveStatusForRisk === 'invoiced' || (effectiveStatusForRisk === 'overdue' && !isActuallyOverdue /* means due soon not yet overdue */ ))) {
+      if (primaryStatus === 'pending' && contractDueDate && contractDueDate >= todayMidnight) {
         upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
-        if (effectiveStatusForRisk !== 'paid') { // Only count non-paid as pending
-            totalPendingIncomeCalc += c.amount;
-        }
+        totalPendingIncomeCalc += c.amount;
       }
       
-      if (invoiceStatus === 'paid' && c.updatedAt) {
-        const paymentDate = (c.updatedAt instanceof Timestamp) ? c.updatedAt.toDate() : new Date(c.updatedAt as any);
-        if (paymentDate.getMonth() === currentMonth && paymentDate.getFullYear() === currentYear) {
+      if (primaryStatus === 'paid' && contractDueDate) {
+        // Using dueDate as a proxy for payment month in this simplified model
+        if (contractDueDate.getMonth() === currentMonth && contractDueDate.getFullYear() === currentYear) {
           paidThisMonthAmountCalc += c.amount;
         }
       }
 
-      const invoiceActionDateSource = c.updatedAt || c.createdAt;
-      if ((invoiceStatus !== 'none' && invoiceStatus !== 'draft') && invoiceActionDateSource) {
-         const invoiceActionDate = (invoiceActionDateSource instanceof Timestamp) ? invoiceActionDateSource.toDate() : new Date(invoiceActionDateSource as any);
-        if (invoiceActionDate.getMonth() === currentMonth && invoiceActionDate.getFullYear() === currentYear) {
-            totalInvoicedThisMonthCalc += c.amount;
-        }
-      }
+      // Logic for totalInvoicedThisMonth would be based on invoiceStatus and invoice creation/sent date
+      // For simplification, we are removing this for now.
     });
     
     upcomingIncomeSource.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
@@ -256,8 +234,8 @@ export default function DashboardPage() {
       upcomingIncomeList: upcomingIncomeSource,
       atRiskPaymentsList: atRiskPaymentsListSource,
       earningsChartData: MOCK_EARNINGS_DATA, 
-      totalInvoicedThisMonth: totalInvoicedThisMonthCalc,
-      totalCollectedThisMonth: paidThisMonthAmountCalc,
+      // totalInvoicedThisMonth: totalInvoicedThisMonthCalc, // Commented out
+      // totalCollectedThisMonth: paidThisMonthAmountCalc, // Commented out
     });
 
   }, [allContracts, filters, user, isLoadingData]);
@@ -279,8 +257,8 @@ export default function DashboardPage() {
           onFiltersChange={handleFiltersChange}
           initialFilters={initialFilterState} 
         />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 mb-6">
-          {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 mb-6"> {/* Adjusted for 3 cards */}
+          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
         </div>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
@@ -355,7 +333,7 @@ export default function DashboardPage() {
         initialFilters={filters}
       />
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 mb-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 mb-6"> {/* Adjusted for 3 cards */}
         <SummaryCard 
           title="Pending Income (Filtered)" 
           value={`$${stats.totalPendingIncome.toLocaleString()}`}
@@ -375,7 +353,8 @@ export default function DashboardPage() {
           description={`${stats.totalOverdueCount} overdue`}
           className={stats.atRiskPaymentsCount > 0 ? "border-destructive text-destructive dark:border-destructive/70" : ""}
         />
-         <SummaryCard 
+         {/* 
+        <SummaryCard 
           title="Invoiced This Month (Filtered)" 
           value={`$${stats.totalInvoicedThisMonth.toLocaleString()}`}
           icon={FileSpreadsheet}
@@ -387,6 +366,7 @@ export default function DashboardPage() {
           icon={CheckCircleIcon} 
           description="Based on invoices marked 'paid' this month"
         />
+        */}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
