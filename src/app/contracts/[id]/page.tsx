@@ -96,7 +96,7 @@ export default function ContractDetailPage() {
               ...data,
               createdAt: createdAt,
               updatedAt: updatedAt,
-              invoiceStatus: data.invoiceStatus || 'none',
+              // invoiceStatus: data.invoiceStatus || 'none', // Keep for data integrity if needed elsewhere
             } as Contract);
           } else {
             setContract(null);
@@ -197,6 +197,17 @@ export default function ContractDetailPage() {
                                     contract.negotiationSuggestions.ipRights ||
                                     (contract.negotiationSuggestions.generalSuggestions && contract.negotiationSuggestions.generalSuggestions.length > 0));
 
+  let effectiveDisplayStatus: Contract['status'] = contract.status || 'pending';
+  if (effectiveDisplayStatus === 'pending' && contract.dueDate) {
+      const todayMidnight = new Date();
+      todayMidnight.setHours(0, 0, 0, 0);
+      const contractDueDate = new Date(contract.dueDate + 'T00:00:00');
+      if (contractDueDate < todayMidnight) {
+          effectiveDisplayStatus = 'overdue';
+      }
+  }
+
+
   return (
     <>
       <PageHeader
@@ -251,7 +262,7 @@ export default function ContractDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>Key Information</span>
-                <ContractStatusBadge status={contract.status} /> 
+                <ContractStatusBadge status={effectiveDisplayStatus} /> 
               </CardTitle>
               <CardDescription>Core details of the agreement with {contract.brand}.</CardDescription>
             </CardHeader>
@@ -390,4 +401,6 @@ export default function ContractDetailPage() {
     </>
   );
 }
+    
+
     
