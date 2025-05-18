@@ -7,7 +7,7 @@ import { ContractList } from "@/components/contracts/contract-list";
 import { UploadContractDialog } from "@/components/contracts/upload-contract-dialog";
 import type { Contract } from "@/types";
 import { Input } from "@/components/ui/input";
-import { Search, Download, Loader2 } from "lucide-react";
+import { Search, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { db, collection, query, where, onSnapshot, orderBy as firestoreOrderBy, Timestamp } from '@/lib/firebase';
@@ -47,8 +47,7 @@ export default function ContractsPage() {
               console.warn("Error parsing createdAt string, using current time for contract ID:", docSnap.id, data.createdAt);
               createdAtTimestamp = Timestamp.now();
             }
-          }
-          else {
+          } else {
             console.warn("Contract createdAt field was not a valid Timestamp, using current time as fallback. Document ID:", docSnap.id);
             createdAtTimestamp = Timestamp.now(); 
           }
@@ -62,17 +61,28 @@ export default function ContractsPage() {
              try {
                 updatedAtTimestamp = Timestamp.fromDate(new Date(data.updatedAt));
              } catch(e) {
-                console.warn("Error parsing updatedAt string, using current time for contract ID:", docSnap.id, data.updatedAt);
+                console.warn("Error parsing updatedAt string for contract ID:", docSnap.id, data.updatedAt);
              }
           }
+          
+          let effectiveDisplayStatus = data.status || 'pending';
+          if (effectiveDisplayStatus === 'pending' && data.dueDate) {
+            const todayMidnight = new Date();
+            todayMidnight.setHours(0, 0, 0, 0);
+            const contractDueDate = new Date(data.dueDate + 'T00:00:00'); // Ensure consistent date comparison
+            if (contractDueDate < todayMidnight) {
+              effectiveDisplayStatus = 'overdue';
+            }
+          }
+
 
           return {
             id: docSnap.id,
             ...data,
             createdAt: createdAtTimestamp, 
             updatedAt: updatedAtTimestamp,
-            status: data.status || 'pending', // Use primary status, default to 'pending' if missing
-            invoiceStatus: data.invoiceStatus || 'none',
+            status: effectiveDisplayStatus, // Use the dynamically determined status
+            // invoiceStatus: data.invoiceStatus || 'none', // Keep for data integrity if needed elsewhere
           } as Contract;
         });
         setContracts(contractList);
