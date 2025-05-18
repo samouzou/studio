@@ -7,31 +7,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, AlertTriangle } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Added Alert components
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-export const SignUpForm: React.FC = () => {
+interface SignUpFormProps {
+  onSignUpError?: (error: string | null) => void; // Optional callback
+}
+
+export const SignUpForm: React.FC<SignUpFormProps> = ({ onSignUpError }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [signupError, setSignupError] = useState<string | null>(null); // For signup errors
+  const [internalSignupError, setInternalSignupError] = useState<string | null>(null);
   const { signupWithEmailAndPassword, isLoading } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setSignupError(null); // Clear previous errors
+    setInternalSignupError(null);
+    if (onSignUpError) onSignUpError(null);
+
     const error = await signupWithEmailAndPassword(email, password);
     if (error) {
-      setSignupError(error);
+      setInternalSignupError(error);
+      if (onSignUpError) onSignUpError(error);
     }
     // If no error, onAuthStateChanged will handle redirect/user state
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {signupError && (
+      {internalSignupError && (
         <Alert variant="destructive" className="mb-4">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Sign Up Failed</AlertTitle>
-          <AlertDescription>{signupError}</AlertDescription>
+          <AlertDescription>{internalSignupError}</AlertDescription>
         </Alert>
       )}
       <div className="grid gap-2">
@@ -54,6 +61,7 @@ export const SignUpForm: React.FC = () => {
           onChange={(e) => setPassword(e.target.value)}
           placeholder="•••••••• (min. 6 characters)"
           required
+          minLength={6}
         />
       </div>
       <div>
