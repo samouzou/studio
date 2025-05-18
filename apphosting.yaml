@@ -17,11 +17,20 @@ runConfig:
   #     - BUILD
   #     - RUNTIME
 
+
+
   # Grant access to secrets in Cloud Secret Manager.
   # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
   # - variable: MY_SECRET
   #   secret: mySecretRef
 env:
+
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+      secret: VERZA_FIREBASE_API_KEY # This is the NAME of the secret in Secret Manager
+      availability:
+        - BUILD
+        - RUNTIME
+
   - variable: STRIPE_SECRET_KEY
     secret: stripe-secret-key
 
