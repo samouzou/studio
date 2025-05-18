@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import { 
   auth, 
-  googleAuthProvider, 
+  GoogleAuthProvider, 
   signInWithPopup, 
   signOut, 
   onAuthStateChanged, 
@@ -16,7 +16,8 @@ import {
   doc,
   setDoc,
   getDoc,
-  Timestamp
+  Timestamp,
+  updateProfile as firebaseUpdateProfile
 } from '@/lib/firebase';
 
 export interface UserProfile {
@@ -41,7 +42,7 @@ interface AuthContextType {
   signupWithEmailAndPassword: (email: string, password: string) => Promise<void>;
   isLoading: boolean;
   getUserIdToken: () => Promise<string | null>;
-  refreshAuthUser: () => Promise<void>; // New function to refresh user data
+  refreshAuthUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -54,7 +55,10 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
   if (!userDocSnap.exists()) {
     const { uid, email, displayName, photoURL } = firebaseUser;
     const createdAt = Timestamp.now();
-    const trialEndsAtTimestamp = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
+    let trialEndsAtTimestamp: Timestamp | null = null;
+    
+    // New users get a 7-day trial by default
+    trialEndsAtTimestamp = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
 
     try {
       await setDoc(userDocRef, {
@@ -65,39 +69,45 @@ async function createUserDocument(firebaseUser: FirebaseUser) {
         createdAt,
         stripeCustomerId: null,
         stripeSubscriptionId: null,
-        subscriptionStatus: 'trialing',
+        subscriptionStatus: trialEndsAtTimestamp ? 'trialing' : 'none',
         trialEndsAt: trialEndsAtTimestamp,
         subscriptionEndsAt: null,
         trialExtensionUsed: false,
       });
-      console.log("User document created in Firestore with trial info for UID:", uid);
+      console.log("User document created in Firestore for UID:", uid);
     } catch (error) {
       console.error("Error creating user document in Firestore:", error);
     }
   } else {
+    // User document exists, check for updates or missing fields
     const existingData = userDocSnap.data();
     const updates: Partial<UserProfile> = {};
     
+    // Update avatar or display name if changed in Firebase Auth (e.g. from Google profile)
     if (firebaseUser.photoURL && existingData.avatarUrl !== firebaseUser.photoURL) {
       updates.avatarUrl = firebaseUser.photoURL;
     }
     if (firebaseUser.displayName && existingData.displayName !== firebaseUser.displayName) {
       updates.displayName = firebaseUser.displayName;
     }
+
+    // Initialize missing subscription fields for older users
     if (existingData.stripeCustomerId === undefined) updates.stripeCustomerId = null;
     if (existingData.stripeSubscriptionId === undefined) updates.stripeSubscriptionId = null;
+    
     if (existingData.subscriptionStatus === undefined) {
-        updates.subscriptionStatus = 'none'; 
+        updates.subscriptionStatus = 'none'; // Default to 'none' if no status
     }
-    if (existingData.trialEndsAt === undefined && updates.subscriptionStatus !== 'active' && existingData.subscriptionStatus !== 'active') {
+    
+    if (existingData.trialEndsAt === undefined && (updates.subscriptionStatus === 'none' || existingData.subscriptionStatus === 'none')) {
+        // Give old users a trial if they have no subscription status or it's 'none'
         const createdAt = existingData.createdAt instanceof Timestamp ? existingData.createdAt : Timestamp.now();
-        updates.trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds); 
+        updates.trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
         if (updates.subscriptionStatus === 'none' || existingData.subscriptionStatus === 'none') {
-            updates.subscriptionStatus = 'trialing';
+           updates.subscriptionStatus = 'trialing';
         }
     } else if (existingData.trialEndsAt instanceof Timestamp && existingData.trialEndsAt.toMillis() < Date.now() && existingData.subscriptionStatus === 'trialing') {
-      // If trial has ended and status is still 'trialing', mark as 'none' or 'expired'
-      updates.subscriptionStatus = 'none'; // Or a new status like 'trial_expired'
+      updates.subscriptionStatus = 'none'; 
     }
 
 
@@ -125,6 +135,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFirebaseUserInstance(currentFirebaseUser);
       await createUserDocument(currentFirebaseUser); 
       
+      // Re-fetch the user document from Firestore to get the most up-to-date data
+      // This ensures any defaults set by createUserDocument for existing users are immediately reflected
       const userDocRef = doc(db, 'users', currentFirebaseUser.uid);
       const userDocSnap = await getDoc(userDocRef);
 
@@ -143,7 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           trialExtensionUsed: firestoreUserData.trialExtensionUsed || false,
         });
       } else {
-         console.warn(`User document for ${currentFirebaseUser.uid} still not found. Setting basic profile.`);
+         // This case should be rare now due to createUserDocument
+         console.warn(`User document for ${currentFirebaseUser.uid} still not found after create attempt. Setting basic profile.`);
          setUser({
           uid: currentFirebaseUser.uid,
           email: currentFirebaseUser.email,
@@ -173,16 +186,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchAndSetUser]);
 
   const refreshAuthUser = useCallback(async () => {
-    if (firebaseUserInstance) {
+    const currentFbUser = auth.currentUser; // Get the latest Firebase user instance
+    if (currentFbUser) {
       setIsLoading(true);
-      await fetchAndSetUser(firebaseUserInstance); // Re-fetch and set user
+      // Optionally force refresh the token
+      // await currentFbUser.getIdToken(true); 
+      await fetchAndSetUser(currentFbUser);
+    } else {
+      // If no Firebase user, ensure local state is also null
+      await fetchAndSetUser(null);
     }
-  }, [firebaseUserInstance, fetchAndSetUser]);
+  }, [fetchAndSetUser]);
 
   const loginWithGoogle = async () => {
     try {
       setIsLoading(true);
-      await signInWithPopup(auth, googleAuthProvider);
+      const provider = new GoogleAuthProvider(); // Instantiate the provider
+      await signInWithPopup(auth, provider);
       // onAuthStateChanged will handle setting user
     } catch (error) {
       console.error("Error signing in with Google:", error);
@@ -198,7 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // onAuthStateChanged will handle setting user to null
     } catch (error) {
       console.error("Error signing out:", error);
-      setIsLoading(false); // Ensure loading is false on error
+      setIsLoading(false); 
     }
   };
 
@@ -229,7 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getUserIdToken = async (): Promise<string | null> => {
     if (firebaseUserInstance) {
       try {
-        return await firebaseUserInstance.getIdToken(true);
+        return await firebaseUserInstance.getIdToken(true); // Force refresh token
       } catch (error) {
         console.error("Error getting ID token:", error);
         return null;
@@ -266,4 +286,6 @@ export function useAuth() {
   return context;
 }
 
+// @ts-ignore
 declare function toast(options: { title: string; description: string; variant?: "default" | "destructive"; duration?: number }): void;
+
