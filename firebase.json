@@ -8,7 +8,7 @@
   },
   "hosting": {
     "site": "sololedger-lite", // Use your project ID as the site name
-    "apphosting": "studio-1",    // Reference your App Hosting backend ID
+    "public": "public",    // Reference your App Hosting backend ID
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -17,7 +17,7 @@
     "rewrites": [ // Add this rewrites section
       {
         "source": "**", // Match all requests
-        "destination": "public" // Route them to your App Hosting backend with ID 'nextApp'
+        "destination": "studio-1" // Route them to your App Hosting backend with ID 'nextApp'
       }
     ]
   }
