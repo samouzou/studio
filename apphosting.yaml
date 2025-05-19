@@ -24,7 +24,18 @@ env:
 
   # Stripe key
   - variable: STRIPE_SECRET_KEY
-    secret: stripe-secret-key
+    secret: VERZA-STRIPE-SECRET-KEY
+  
+  - variable: STRIPE_SUBSCRIPTION_WEBHOOK_SECRET
+    secret: VERZA_SUBSCRIPTION_WEBHOOK_SECRET
+
+  - variable: STRIPE_PRICE_ID
+    secret: VERZA_STRIPE_PRICE_ID
+
+  - variable: APP_URL
+    secret: VERZA_APP_URL
+
+
 
   # Gemini
   - variable: GEMINI_API_KEY
