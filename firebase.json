@@ -6,22 +6,13 @@
       "npm --prefix \"$RESOURCE_DIR\" run build"
     ]
   },
-  "apphosting": {
-    "backend": {
-      // This "function" is an identifier for the App Hosting backend service
-      // that runs your Next.js app, as configured by apphosting.yaml.
-      // It's NOT a Cloud Function from your 'functions' directory.
-      // "nextApp" is a common placeholder or default ID.
-      "function": "nextApp"
-    },
-    // The 'app' section is for PWAs deployed on App Hosting and is not needed
-    // for Next.js SSR applications where apphosting.yaml defines the build.
+  "hosting": {
+    "site": "sololedger-lite", 
+    "apphosting": "studio-1",
     "ignore": [
-      "node_modules",
-      ".git",
-      "firebase-debug.log",
-      "firebase-debug.*.log",
-      "functions" // Custom Cloud Functions are deployed separately
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
     ]
   }
 }
