@@ -17,7 +17,7 @@
     "rewrites": [ // Add this rewrites section
       {
         "source": "**", // Match all requests
-        "destination": "studio-1" // Route them to your App Hosting backend with ID 'nextApp'
+        "destination": "public" // Route them to your App Hosting backend with ID 'nextApp'
       }
     ]
   }
