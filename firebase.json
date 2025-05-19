@@ -7,12 +7,18 @@
     ]
   },
   "hosting": {
-    "site": "sololedger-lite", 
-    "apphosting": "studio-1",
+    "site": "sololedger-lite", // Use your project ID as the site name
+    "apphosting": "studio-1",    // Reference your App Hosting backend ID
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "rewrites": [ // Add this rewrites section
+      {
+        "source": "**", // Match all requests
+        "destination": "studio-1" // Route them to your App Hosting backend with ID 'nextApp'
+      }
     ]
   }
 }
