@@ -96,7 +96,7 @@ export default function ContractDetailPage() {
               ...data,
               createdAt: createdAt,
               updatedAt: updatedAt,
-              // invoiceStatus: data.invoiceStatus || 'none', // Keep for data integrity if needed elsewhere
+              invoiceStatus: data.invoiceStatus || 'none',
             } as Contract);
           } else {
             setContract(null);
@@ -198,13 +198,20 @@ export default function ContractDetailPage() {
                                     (contract.negotiationSuggestions.generalSuggestions && contract.negotiationSuggestions.generalSuggestions.length > 0));
 
   let effectiveDisplayStatus: Contract['status'] = contract.status || 'pending';
-  if (effectiveDisplayStatus === 'pending' && contract.dueDate) {
-      const todayMidnight = new Date();
-      todayMidnight.setHours(0, 0, 0, 0);
-      const contractDueDate = new Date(contract.dueDate + 'T00:00:00');
-      if (contractDueDate < todayMidnight) {
-          effectiveDisplayStatus = 'overdue';
-      }
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0, 0, 0, 0);
+  const contractDueDate = contract.dueDate ? new Date(contract.dueDate + 'T00:00:00') : null;
+
+  if (contract.invoiceStatus === 'paid') {
+    effectiveDisplayStatus = 'paid';
+  } else if (contract.invoiceStatus === 'overdue') {
+    effectiveDisplayStatus = 'overdue';
+  } else if ((contract.invoiceStatus === 'sent' || contract.invoiceStatus === 'viewed') && contractDueDate && contractDueDate < todayMidnight) {
+    effectiveDisplayStatus = 'overdue';
+  } else if (contract.invoiceStatus === 'sent' || contract.invoiceStatus === 'viewed') {
+    effectiveDisplayStatus = 'invoiced';
+  } else if (effectiveDisplayStatus === 'pending' && contractDueDate && contractDueDate < todayMidnight) {
+    effectiveDisplayStatus = 'overdue';
   }
 
 
@@ -220,13 +227,11 @@ export default function ContractDetailPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
               </Link>
             </Button>
-            {/* 
             <Button variant="secondary" asChild>
               <Link href={`/contracts/${contract.id}/invoice`}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" /> Manage Invoice
               </Link>
             </Button>
-            */}
             <Button variant="outline" disabled><Edit3 className="mr-2 h-4 w-4" /> Edit</Button>
             <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
               <AlertDialogTrigger asChild>
@@ -285,7 +290,6 @@ export default function ContractDetailPage() {
                   } 
                 />
               )}
-              {/* 
               {contract.invoiceNumber && (
                 <DetailItem icon={FileSpreadsheet} label="Invoice Number" value={contract.invoiceNumber} />
               )}
@@ -296,7 +300,6 @@ export default function ContractDetailPage() {
                     value={<Badge variant="outline" className="capitalize">{contract.invoiceStatus.replace('_', ' ')}</Badge>} 
                  />
               )}
-              */}
             </CardContent>
           </Card>
 

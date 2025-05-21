@@ -4,21 +4,34 @@
     "predeploy": [
       "npm --prefix \"$RESOURCE_DIR\" run lint",
       "npm --prefix \"$RESOURCE_DIR\" run build"
-    ]
+    ],
+    "codebase": "default"
   },
   "hosting": {
-    "site": "sololedger-lite", // Use your project ID as the site name
-    "public": "public",    // Reference your App Hosting backend ID
+    "site": "sololedger-lite",
+    "public": "public",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ],
-    "rewrites": [ // Add this rewrites section
+    "rewrites": [
       {
-        "source": "**", // Match all requests
-        "destination": "studio-1" // Route them to your App Hosting backend with ID 'nextApp'
+        "source": "**",
+        "destination": "studio-1"
       }
     ]
+  },
+  "apphosting": {
+    "backendId": "studio-1",
+    "rootDir": "/",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.log",
+      "firebase-debug.*.log",
+      "functions"
+    ],
+    "alwaysDeployFromSource": true
   }
 }

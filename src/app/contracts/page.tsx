@@ -65,14 +65,22 @@ export default function ContractsPage() {
              }
           }
           
-          let effectiveDisplayStatus = data.status || 'pending';
-          if (effectiveDisplayStatus === 'pending' && data.dueDate) {
-            const todayMidnight = new Date();
-            todayMidnight.setHours(0, 0, 0, 0);
-            const contractDueDate = new Date(data.dueDate + 'T00:00:00'); // Ensure consistent date comparison
-            if (contractDueDate < todayMidnight) {
-              effectiveDisplayStatus = 'overdue';
-            }
+          let effectiveDisplayStatus: Contract['status'] = data.status || 'pending';
+          const invoiceStatus = data.invoiceStatus || 'none';
+          const todayMidnight = new Date();
+          todayMidnight.setHours(0, 0, 0, 0);
+          const contractDueDate = data.dueDate ? new Date(data.dueDate + 'T00:00:00') : null;
+
+          if (invoiceStatus === 'paid') {
+            effectiveDisplayStatus = 'paid';
+          } else if (invoiceStatus === 'overdue') {
+            effectiveDisplayStatus = 'overdue';
+          } else if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed') && contractDueDate && contractDueDate < todayMidnight) {
+            effectiveDisplayStatus = 'overdue';
+          } else if (invoiceStatus === 'sent' || invoiceStatus === 'viewed') {
+            effectiveDisplayStatus = 'invoiced';
+          } else if (effectiveDisplayStatus === 'pending' && contractDueDate && contractDueDate < todayMidnight) {
+            effectiveDisplayStatus = 'overdue';
           }
 
 
@@ -81,8 +89,8 @@ export default function ContractsPage() {
             ...data,
             createdAt: createdAtTimestamp, 
             updatedAt: updatedAtTimestamp,
-            status: effectiveDisplayStatus, // Use the dynamically determined status
-            // invoiceStatus: data.invoiceStatus || 'none', // Keep for data integrity if needed elsewhere
+            status: effectiveDisplayStatus, 
+            invoiceStatus: invoiceStatus,
           } as Contract;
         });
         setContracts(contractList);
@@ -160,3 +168,4 @@ export default function ContractsPage() {
     </>
   );
 }
+
