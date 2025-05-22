@@ -1,20 +1,60 @@
 
 "use client";
 
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from "@/components/page-header";
 import { SubscriptionCard } from "@/components/settings/subscription-card";
-import { StripeConnectCard } from "@/components/settings/stripe-connect-card"; // New Import
+import { StripeConnectCard } from "@/components/settings/stripe-connect-card";
 import { useAuth } from "@/hooks/use-auth";
 import { AlertCircle, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, refreshAuthUser } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { toast } = useToast();
+  const [isRefreshingStripeStatus, setIsRefreshingStripeStatus] = useState(false);
 
-  if (isLoading) {
+  useEffect(() => {
+    const stripeConnectReturn = searchParams.get('stripe_connect_return');
+    if (stripeConnectReturn === 'true' && user && !isRefreshingStripeStatus) {
+      setIsRefreshingStripeStatus(true);
+      toast({
+        title: "Finalizing Stripe Connection",
+        description: "Attempting to update your Stripe account status...",
+      });
+      refreshAuthUser().then(() => {
+        toast({
+          title: "Status Refreshed",
+          description: "Your Stripe account status should now be up to date.",
+        });
+        // Clean the URL
+        const newPath = window.location.pathname; // Keep current path, remove query params
+        router.replace(newPath, { scroll: false });
+      }).catch(error => {
+        console.error("Error refreshing user after Stripe connect:", error);
+        toast({
+          title: "Refresh Error",
+          description: "Could not automatically refresh status. It may update shortly.",
+          variant: "destructive",
+        });
+      }).finally(() => {
+        setIsRefreshingStripeStatus(false);
+      });
+    }
+  // Only run this effect if searchParams, user, or refreshAuthUser changes.
+  // Avoid re-running if isRefreshingStripeStatus changes to prevent loops.
+  }, [searchParams, user, refreshAuthUser, router, toast]); // Removed isRefreshingStripeStatus from deps
+
+  if (isLoading || isRefreshingStripeStatus) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">Loading settings...</p>
+        <p className="mt-4 text-muted-foreground">
+          {isRefreshingStripeStatus ? "Updating Stripe status..." : "Loading settings..."}
+        </p>
       </div>
     );
   }
@@ -37,7 +77,7 @@ export default function SettingsPage() {
       />
       <div className="space-y-6">
         <SubscriptionCard />
-        <StripeConnectCard /> {/* Added Stripe Connect Card */}
+        <StripeConnectCard />
       </div>
     </>
   );

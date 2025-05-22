@@ -194,7 +194,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     }
 
     // Get creator's Stripe account information
-    const creatorUserId = contractData.creatorId;
+    const creatorUserId = contractData.userId;
     const creatorDoc = await db.collection("users").doc(creatorUserId).get();
     const creatorData = creatorDoc.data();
 
@@ -350,8 +350,19 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
 
 // Handle Stripe Connected Account webhook
 export const handleStripeAccountWebhook = onRequest(async (request, response) => {
+  // Set CORS headers
+  response.set("Access-Control-Allow-Origin", "*");
+  response.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.set("Access-Control-Allow-Headers", "Content-Type, Stripe-Signature");
+
+  // Handle preflight requests
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+  
   const sig = request.headers["stripe-signature"];
-  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const endpointSecret = process.env.STRIPE_ACCOUNT_WEBHOOK_SECRET;
 
   if (!sig || !endpointSecret) {
     logger.error("Missing stripe signature or webhook secret");
