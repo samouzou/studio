@@ -13,19 +13,17 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const publicPaths = ['/login', '/pay/contract']; // Add the base path for client payment
+
   useEffect(() => {
-    // This effect handles redirection logic AFTER the initial loading state is resolved
-    // and for pages OTHER than /login.
-    // LoginPage has its own useEffect to handle redirection upon successful authentication.
-    if (!isLoading && !isAuthenticated && pathname !== "/login") {
+    if (!isLoading && !isAuthenticated && !publicPaths.some(path => pathname.startsWith(path))) {
       router.push("/login");
     }
   }, [isAuthenticated, isLoading, router, pathname]);
 
-  // If on the login page, always render it.
+  // If on a public path, always render it.
   // LoginPage itself will handle redirection if the user becomes authenticated.
-  // It will also use `useAuth().isLoading` for its internal loading states (e.g., disabling buttons).
-  if (pathname === "/login") {
+  if (publicPaths.some(path => pathname.startsWith(path))) {
     return <>{children}</>;
   }
 
