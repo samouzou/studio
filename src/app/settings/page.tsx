@@ -11,20 +11,40 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
-  const { user, isLoading } = useAuth(); // Removed refreshAuthUser for this undo
-  // const searchParams = useSearchParams(); // Removed for this undo
-  // const router = useRouter(); // Removed for this undo
-  // const { toast } = useToast(); // Removed for this undo
-  // const [isRefreshingStripeStatus, setIsRefreshingStripeStatus] = useState(false); // Removed for this undo
+  const { user, isLoading, refreshAuthUser } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { toast } = useToast();
+  const [isRefreshingStripeStatus, setIsRefreshingStripeStatus] = useState(false);
 
-  // useEffect for stripe_connect_return is removed as part of the undo operation.
+  useEffect(() => {
+    if (searchParams.get('stripe_connect_return') === 'true') {
+      setIsRefreshingStripeStatus(true);
+      toast({
+        title: "Refreshing Stripe Status",
+        description: "Attempting to fetch the latest status for your Stripe Connected Account...",
+      });
+      refreshAuthUser().finally(() => {
+        setIsRefreshingStripeStatus(false);
+        // Clean the URL by removing query parameters
+        const newPath = window.location.pathname; 
+        router.replace(newPath, { scroll: false });
+        toast({
+          title: "Stripe Status Refreshed",
+          description: "Your Stripe Connected Account status should now be up to date. If it still shows incomplete, the Stripe webhook might be slightly delayed.",
+          duration: 7000,
+        });
+      });
+    }
+  }, [searchParams, refreshAuthUser, router, toast]);
 
-  if (isLoading) { // Removed isRefreshingStripeStatus from condition
+
+  if (isLoading || isRefreshingStripeStatus) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <p className="mt-4 text-muted-foreground">
-          Loading settings...
+          {isRefreshingStripeStatus ? "Refreshing Stripe status..." : "Loading settings..."}
         </p>
       </div>
     );
@@ -34,7 +54,7 @@ export default function SettingsPage() {
     // This case should ideally be handled by AuthGuard redirecting to login
     return (
       <div className="flex flex-col items-center justify-center h-full pt-10">
-        <AlertCircle className="w-12 h-12 text-primary mb-4" />
+        <AlertCircle className="w-12 w-12 text-primary mb-4" />
         <p className="text-xl text-muted-foreground">Please log in to view your settings.</p>
       </div>
     );
