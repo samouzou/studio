@@ -3,6 +3,7 @@
 
 import { PageHeader } from "@/components/page-header";
 import { SubscriptionCard } from "@/components/settings/subscription-card";
+import { StripeConnectCard } from "@/components/settings/stripe-connect-card"; // New Import
 import { useAuth } from "@/hooks/use-auth";
 import { AlertCircle, Loader2 } from "lucide-react";
 
@@ -32,11 +33,11 @@ export default function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description="Manage your account and subscription preferences."
+        description="Manage your account, subscription, and payment preferences."
       />
       <div className="space-y-6">
         <SubscriptionCard />
-        {/* You can add other settings cards here in the future, e.g., ProfileSettingsCard, NotificationSettingsCard */}
+        <StripeConnectCard /> {/* Added Stripe Connect Card */}
       </div>
     </>
   );

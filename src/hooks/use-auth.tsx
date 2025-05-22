@@ -4,13 +4,13 @@
 import type { ReactNode } from 'react';
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import { GoogleAuthProvider } from 'firebase/auth'; // Import class directly
-import { 
-  auth, 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged, 
-  createUserWithEmailAndPassword as firebaseCreateUserWithEmailAndPassword, 
-  signInWithEmailAndPassword as firebaseSignInWithEmailAndPassword, 
+import {
+  auth,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword as firebaseCreateUserWithEmailAndPassword,
+  signInWithEmailAndPassword as firebaseSignInWithEmailAndPassword,
   sendPasswordResetEmail as firebaseSendPasswordResetEmail,
   updateProfile as firebaseUpdateProfile,
   type FirebaseUser,
@@ -19,10 +19,10 @@ import {
   setDoc,
   getDoc,
   Timestamp,
-  storage, // Ensure storage is imported if used by other parts of the hook, though not directly here
-  ref as storageRef, // Ensure storageRef is imported
-  uploadBytes, // Ensure uploadBytes is imported
-  getDownloadURL // Ensure getDownloadURL is imported
+  // storage, // No direct use here, imported by components needing it
+  // ref as storageRef,
+  // uploadBytes,
+  // getDownloadURL
 } from '@/lib/firebase';
 import { useToast } from "@/hooks/use-toast";
 
@@ -32,12 +32,21 @@ export interface UserProfile {
   email: string | null;
   displayName: string | null;
   avatarUrl: string | null;
+  createdAt?: Timestamp; // Added for clarity, was implicitly there
+
+  // Subscription Fields
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   subscriptionStatus?: 'trialing' | 'active' | 'past_due' | 'canceled' | 'incomplete' | 'none';
   trialEndsAt?: Timestamp | null;
   subscriptionEndsAt?: Timestamp | null;
   trialExtensionUsed?: boolean;
+
+  // Stripe Connected Account Fields
+  stripeAccountId?: string | null;
+  stripeAccountStatus?: 'none' | 'onboarding_incomplete' | 'pending_verification' | 'active' | 'restricted' | 'restricted_soon';
+  stripeChargesEnabled?: boolean;
+  stripePayoutsEnabled?: boolean;
 }
 
 interface AuthContextType {
@@ -64,21 +73,30 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
   let needsUpdate = false;
 
   if (!userDocSnap.exists()) {
-    const { uid, email } = firebaseUser;
+    const { uid, email, displayName, photoURL } = firebaseUser;
     const createdAt = Timestamp.now();
-    let trialEndsAtTimestamp: Timestamp | null = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
+    const trialEndsAtTimestamp = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
 
     updates.uid = uid;
     updates.email = email;
-    updates.displayName = firebaseUser.displayName || email?.split('@')[0] || 'User';
-    updates.avatarUrl = firebaseUser.photoURL || null;
+    updates.displayName = displayName || email?.split('@')[0] || 'User';
+    updates.avatarUrl = photoURL || null;
     updates.createdAt = createdAt;
+
+    // Subscription defaults
     updates.stripeCustomerId = null;
     updates.stripeSubscriptionId = null;
-    updates.subscriptionStatus = trialEndsAtTimestamp ? 'trialing' : 'none';
+    updates.subscriptionStatus = 'trialing';
     updates.trialEndsAt = trialEndsAtTimestamp;
     updates.subscriptionEndsAt = null;
     updates.trialExtensionUsed = false;
+
+    // Stripe Connect defaults
+    updates.stripeAccountId = null;
+    updates.stripeAccountStatus = 'none';
+    updates.stripeChargesEnabled = false;
+    updates.stripePayoutsEnabled = false;
+
     needsUpdate = true;
 
     try {
@@ -88,8 +106,8 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
       console.error("Error creating user document in Firestore:", error);
     }
   } else {
-    const existingData = userDocSnap.data() as UserProfile; // Assume UserProfile structure
-    
+    const existingData = userDocSnap.data() as UserProfile;
+
     if (firebaseUser.photoURL && existingData.avatarUrl !== firebaseUser.photoURL) {
       updates.avatarUrl = firebaseUser.photoURL;
       needsUpdate = true;
@@ -99,44 +117,30 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
       needsUpdate = true;
     }
 
-    if (existingData.stripeCustomerId === undefined) {
-      updates.stripeCustomerId = null;
-      needsUpdate = true;
-    }
-    if (existingData.stripeSubscriptionId === undefined) {
-      updates.stripeSubscriptionId = null;
-      needsUpdate = true;
-    }
-    
-    let currentSubscriptionStatus = existingData.subscriptionStatus;
-    if (currentSubscriptionStatus === undefined) {
-      updates.subscriptionStatus = 'none'; 
-      currentSubscriptionStatus = 'none'; 
-      needsUpdate = true;
-    }
-    
-    let currentTrialEndsAt = existingData.trialEndsAt;
-    if (currentTrialEndsAt === undefined && (currentSubscriptionStatus === 'none' || currentSubscriptionStatus === 'trialing')) {
+    // Ensure subscription fields have defaults if missing (for older users)
+    if (existingData.stripeCustomerId === undefined) { updates.stripeCustomerId = null; needsUpdate = true; }
+    if (existingData.stripeSubscriptionId === undefined) { updates.stripeSubscriptionId = null; needsUpdate = true; }
+    if (existingData.subscriptionStatus === undefined) { updates.subscriptionStatus = 'none'; needsUpdate = true; }
+    if (existingData.trialEndsAt === undefined && (existingData.subscriptionStatus === 'none' || existingData.subscriptionStatus === 'trialing' || !existingData.subscriptionStatus)) {
       const createdAt = existingData.createdAt || Timestamp.now();
-      currentTrialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
-      updates.trialEndsAt = currentTrialEndsAt;
-      if (currentSubscriptionStatus === 'none') { 
+      updates.trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
+      if (existingData.subscriptionStatus === 'none' || !existingData.subscriptionStatus) {
          updates.subscriptionStatus = 'trialing';
       }
       needsUpdate = true;
-    } else if (currentTrialEndsAt && currentTrialEndsAt.toMillis() < Date.now() && currentSubscriptionStatus === 'trialing') {
-      updates.subscriptionStatus = 'none'; 
+    } else if (existingData.trialEndsAt && existingData.trialEndsAt.toMillis() < Date.now() && existingData.subscriptionStatus === 'trialing') {
+      updates.subscriptionStatus = 'none';
       needsUpdate = true;
     }
+    if (existingData.subscriptionEndsAt === undefined) { updates.subscriptionEndsAt = null; needsUpdate = true; }
+    if (existingData.trialExtensionUsed === undefined) { updates.trialExtensionUsed = false; needsUpdate = true; }
 
-    if (existingData.subscriptionEndsAt === undefined) {
-      updates.subscriptionEndsAt = null;
-      needsUpdate = true;
-    }
-    if (existingData.trialExtensionUsed === undefined) {
-      updates.trialExtensionUsed = false;
-      needsUpdate = true;
-    }
+    // Ensure Stripe Connect fields have defaults if missing
+    if (existingData.stripeAccountId === undefined) { updates.stripeAccountId = null; needsUpdate = true; }
+    if (existingData.stripeAccountStatus === undefined) { updates.stripeAccountStatus = 'none'; needsUpdate = true; }
+    if (existingData.stripeChargesEnabled === undefined) { updates.stripeChargesEnabled = false; needsUpdate = true; }
+    if (existingData.stripePayoutsEnabled === undefined) { updates.stripePayoutsEnabled = false; needsUpdate = true; }
+
 
     if (needsUpdate) {
       try {
@@ -159,8 +163,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchAndSetUser = useCallback(async (currentFirebaseUser: FirebaseUser | null) => {
     if (currentFirebaseUser) {
       setFirebaseUserInstance(currentFirebaseUser);
-      await createUserDocument(currentFirebaseUser); 
-      
+      await createUserDocument(currentFirebaseUser);
+
       const userDocRef = doc(db, 'users', currentFirebaseUser.uid);
       const userDocSnap = await getDoc(userDocRef);
 
@@ -171,26 +175,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: currentFirebaseUser.email,
           displayName: firestoreUserData.displayName || currentFirebaseUser.displayName,
           avatarUrl: firestoreUserData.avatarUrl || currentFirebaseUser.photoURL,
+          createdAt: firestoreUserData.createdAt,
+          // Subscription
           stripeCustomerId: firestoreUserData.stripeCustomerId,
           stripeSubscriptionId: firestoreUserData.stripeSubscriptionId,
           subscriptionStatus: firestoreUserData.subscriptionStatus,
           trialEndsAt: firestoreUserData.trialEndsAt,
           subscriptionEndsAt: firestoreUserData.subscriptionEndsAt,
           trialExtensionUsed: firestoreUserData.trialExtensionUsed,
+          // Stripe Connect
+          stripeAccountId: firestoreUserData.stripeAccountId,
+          stripeAccountStatus: firestoreUserData.stripeAccountStatus,
+          stripeChargesEnabled: firestoreUserData.stripeChargesEnabled,
+          stripePayoutsEnabled: firestoreUserData.stripePayoutsEnabled,
         });
       } else {
-         console.warn(`User document for ${currentFirebaseUser.uid} not found even after create attempt. Setting basic profile.`);
-         setUser({ 
+         console.warn(`User document for ${currentFirebaseUser.uid} not found. This should not happen after createUserDocument.`);
+         setUser({
           uid: currentFirebaseUser.uid,
           email: currentFirebaseUser.email,
           displayName: currentFirebaseUser.displayName,
           avatarUrl: currentFirebaseUser.photoURL,
-          stripeCustomerId: null,
-          stripeSubscriptionId: null,
-          subscriptionStatus: 'none', 
-          trialEndsAt: null, 
-          subscriptionEndsAt: null,
-          trialExtensionUsed: false,
+          createdAt: Timestamp.now(),
+          subscriptionStatus: 'none',
+          stripeAccountStatus: 'none',
         });
       }
     } else {
@@ -210,20 +218,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshAuthUser = useCallback(async () => {
     const currentFbUser = auth.currentUser;
-    setIsLoading(true);
-    await fetchAndSetUser(currentFbUser);
+    if (currentFbUser) {
+      setIsLoading(true); // Indicate loading during refresh
+      await fetchAndSetUser(currentFbUser);
+    }
   }, [fetchAndSetUser]);
+
 
   const loginWithGoogle = async () => {
     try {
       setIsLoading(true);
-      const provider = new GoogleAuthProvider(); 
+      const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-      // onAuthStateChanged will handle setting user and clearing loading state
     } catch (error: any) {
       console.error("Error signing in with Google:", error);
       toast({ title: "Login Failed", description: error.message || "Could not sign in with Google.", variant: "destructive"});
-      setUser(null); 
+      setUser(null);
       setIsLoading(false);
     }
   };
@@ -232,11 +242,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       await signOut(auth);
-      // onAuthStateChanged will set user to null and clear loading state
     } catch (error: any) {
       console.error("Error signing out:", error);
       toast({ title: "Logout Failed", description: error.message, variant: "destructive"});
-      setIsLoading(false); 
+      setIsLoading(false);
     }
   };
 
@@ -244,14 +253,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       await firebaseSignInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle setting user and clearing loading state
-      // For explicit feedback, we can set isLoading(false) here but onAuthStateChanged is preferred for consistency
-      // For now, we rely on onAuthStateChanged to set isLoading(false) after fetchAndSetUser
-      return null; // Success
+      return null;
     } catch (error: any) {
       console.error("Error signing in with email and password:", error);
-      setUser(null); // Ensure user state is cleared on error
-      setIsLoading(false); // Explicitly set loading to false on error
+      setUser(null);
+      setIsLoading(false);
       switch (error.code) {
         case 'auth/user-not-found':
         case 'auth/wrong-password':
@@ -269,12 +275,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       await firebaseCreateUserWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle setting user and clearing loading state
-      return null; // Success
+      return null;
     } catch (error: any) {
       console.error("Error signing up with email and password:", error);
-      setUser(null); // Ensure user state is cleared on error
-      setIsLoading(false); // Explicitly set loading to false on error
+      setUser(null);
+      setIsLoading(false);
       switch (error.code) {
         case 'auth/email-already-in-use':
           return 'This email address is already in use.';
@@ -335,7 +340,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sendPasswordReset,
       isLoading,
       getUserIdToken,
-      refreshAuthUser 
+      refreshAuthUser
     }}>
       {children}
     </AuthContext.Provider>
