@@ -350,19 +350,8 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
 
 // Handle Stripe Connected Account webhook
 export const handleStripeAccountWebhook = onRequest(async (request, response) => {
-  // Set CORS headers
-  response.set("Access-Control-Allow-Origin", "*");
-  response.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.set("Access-Control-Allow-Headers", "Content-Type, Stripe-Signature");
-
-  // Handle preflight requests
-  if (request.method === "OPTIONS") {
-    response.status(204).send("");
-    return;
-  }
-  
   const sig = request.headers["stripe-signature"];
-  const endpointSecret = process.env.STRIPE_ACCOUNT_WEBHOOK_SECRET;
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   if (!sig || !endpointSecret) {
     logger.error("Missing stripe signature or webhook secret");
@@ -377,6 +366,7 @@ export const handleStripeAccountWebhook = onRequest(async (request, response) =>
       endpointSecret
     );
 
+    // Handle account.updated event
     if (event.type === "account.updated") {
       const account = event.data.object as Stripe.Account;
       const db = admin.firestore();
@@ -397,12 +387,41 @@ export const handleStripeAccountWebhook = onRequest(async (request, response) =>
       const updates: Partial<UserData> = {
         stripeChargesEnabled: account.charges_enabled,
         stripePayoutsEnabled: account.payouts_enabled,
-        stripeAccountStatus: account.details_submitted ?
-          "active" :
-          "onboarding_incomplete",
+        stripeAccountStatus: account.details_submitted
+          ? "active"
+          : "onboarding_incomplete",
       };
 
       await userDoc.ref.update(updates);
+      logger.info("Updated user document with account status:", account.id);
+    }
+
+    // Handle account.application.authorized event
+    if (event.type === "account.application.authorized") {
+      const application = event.data.object as unknown as {id: string; account: string};
+      const db = admin.firestore();
+
+      // Find user with this Stripe account ID
+      const usersRef = db.collection("users");
+      const snapshot = await usersRef
+        .where("stripeAccountId", "==", application.account)
+        .get();
+
+      if (snapshot.empty) {
+        logger.error("No user found with Stripe account ID:", application.account);
+        response.status(200).send("No user found");
+        return;
+      }
+
+      const userDoc = snapshot.docs[0];
+      const updates: Partial<UserData> = {
+        stripeAccountStatus: "active",
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+      };
+
+      await userDoc.ref.update(updates);
+      logger.info("Updated user document after successful connection:", application.account);
     }
 
     response.status(200).send("Webhook processed");
