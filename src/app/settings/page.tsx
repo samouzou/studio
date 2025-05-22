@@ -11,49 +11,20 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
-  const { user, isLoading, refreshAuthUser } = useAuth();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const { toast } = useToast();
-  const [isRefreshingStripeStatus, setIsRefreshingStripeStatus] = useState(false);
+  const { user, isLoading } = useAuth(); // Removed refreshAuthUser for this undo
+  // const searchParams = useSearchParams(); // Removed for this undo
+  // const router = useRouter(); // Removed for this undo
+  // const { toast } = useToast(); // Removed for this undo
+  // const [isRefreshingStripeStatus, setIsRefreshingStripeStatus] = useState(false); // Removed for this undo
 
-  useEffect(() => {
-    const stripeConnectReturn = searchParams.get('stripe_connect_return');
-    if (stripeConnectReturn === 'true' && user && !isRefreshingStripeStatus) {
-      setIsRefreshingStripeStatus(true);
-      toast({
-        title: "Finalizing Stripe Connection",
-        description: "Attempting to update your Stripe account status...",
-      });
-      refreshAuthUser().then(() => {
-        toast({
-          title: "Status Refreshed",
-          description: "Your Stripe account status should now be up to date.",
-        });
-        // Clean the URL
-        const newPath = window.location.pathname; // Keep current path, remove query params
-        router.replace(newPath, { scroll: false });
-      }).catch(error => {
-        console.error("Error refreshing user after Stripe connect:", error);
-        toast({
-          title: "Refresh Error",
-          description: "Could not automatically refresh status. It may update shortly.",
-          variant: "destructive",
-        });
-      }).finally(() => {
-        setIsRefreshingStripeStatus(false);
-      });
-    }
-  // Only run this effect if searchParams, user, or refreshAuthUser changes.
-  // Avoid re-running if isRefreshingStripeStatus changes to prevent loops.
-  }, [searchParams, user, refreshAuthUser, router, toast]); // Removed isRefreshingStripeStatus from deps
+  // useEffect for stripe_connect_return is removed as part of the undo operation.
 
-  if (isLoading || isRefreshingStripeStatus) {
+  if (isLoading) { // Removed isRefreshingStripeStatus from condition
     return (
       <div className="flex min-h-screen flex-col items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
         <p className="mt-4 text-muted-foreground">
-          {isRefreshingStripeStatus ? "Updating Stripe status..." : "Loading settings..."}
+          Loading settings...
         </p>
       </div>
     );
