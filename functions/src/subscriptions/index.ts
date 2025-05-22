@@ -225,7 +225,7 @@ export const stripeSubscriptionWebhookHandler = onRequest(async (request, respon
           trial_end: subscription.trial_end,
           status: subscription.status,
         });
-        
+
         let firestoreSubscriptionEndsAt: admin.firestore.Timestamp | null = null;
         if (typeof subscription.current_period_end === "number") {
           firestoreSubscriptionEndsAt = admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000);

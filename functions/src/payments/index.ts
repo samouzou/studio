@@ -34,6 +34,14 @@ if (sendgridKey) {
   logger.warn("SENDGRID_API_KEY is not set. Emails will not be sent.");
 }
 
+interface UserData {
+  stripeAccountId?: string;
+  stripeAccountStatus?: string;
+  stripeChargesEnabled?: boolean;
+  stripePayoutsEnabled?: boolean;
+  email?: string;
+}
+
 /**
  * Verifies the Firebase ID token from the Authorization header
  * @param {string | undefined} authHeader - The Authorization header from the request
@@ -54,6 +62,105 @@ async function verifyAuthToken(authHeader: string | undefined): Promise<string> 
     throw new Error("Invalid token");
   }
 }
+
+// Create Stripe Connected Account
+export const createStripeConnectedAccount = onRequest(async (request, response) => {
+  response.set("Access-Control-Allow-Origin", "*");
+  response.set("Access-Control-Allow-Methods", "POST");
+  response.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  try {
+    const userId = await verifyAuthToken(request.headers.authorization);
+    const userRef = db.collection("users").doc(userId);
+
+    // Check if user already has a Stripe account
+    const userDoc = await userRef.get();
+    const userData = userDoc.data() as UserData;
+
+    if (userData?.stripeAccountId) {
+      response.json({stripeAccountId: userData.stripeAccountId});
+      return;
+    }
+
+    // Get user email
+    const userRecord = await admin.auth().getUser(userId);
+    const email = userRecord.email;
+
+    if (!email) {
+      throw new Error("User must have an email address");
+    }
+
+    // Create Stripe Connected Account
+    const account = await stripe.accounts.create({
+      type: "express",
+      email,
+      capabilities: {
+        card_payments: {requested: true},
+        transfers: {requested: true},
+      },
+    });
+
+    // Update user document with Stripe account info
+    await userRef.update({
+      stripeAccountId: account.id,
+      stripeAccountStatus: "onboarding_incomplete",
+      stripeChargesEnabled: false,
+      stripePayoutsEnabled: false,
+    });
+
+    response.json({stripeAccountId: account.id});
+  } catch (error) {
+    logger.error("Error creating Stripe account:", error);
+    response.status(401).json({
+      error: "Failed to create Stripe account",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// Create Stripe Account Link
+export const createStripeAccountLink = onRequest(async (request, response) => {
+  response.set("Access-Control-Allow-Origin", "*");
+  response.set("Access-Control-Allow-Methods", "POST");
+  response.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (request.method === "OPTIONS") {
+    response.status(204).send("");
+    return;
+  }
+
+  try {
+    const userId = await verifyAuthToken(request.headers.authorization);
+    const userRef = db.collection("users").doc(userId);
+
+    const userDoc = await userRef.get();
+    const userData = userDoc.data() as UserData;
+
+    if (!userData?.stripeAccountId) {
+      throw new Error("No Stripe account found");
+    }
+
+    const accountLink = await stripe.accountLinks.create({
+      account: userData.stripeAccountId,
+      refresh_url: `${process.env.APP_URL}/reauth`,
+      return_url: `${process.env.APP_URL}/settings?stripe_connect_return=true`,
+      type: "account_onboarding",
+    });
+
+    response.json({url: accountLink.url});
+  } catch (error) {
+    logger.error("Error creating account link:", error);
+    response.status(401).json({
+      error: "Failed to create account link",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
 
 // Create payment intent
 export const createPaymentIntent = onRequest(async (request, response) => {
@@ -80,17 +187,32 @@ export const createPaymentIntent = onRequest(async (request, response) => {
 
     // Verify user has access to this contract
     const contractDoc = await db.collection("contracts").doc(contractId).get();
-    if (!contractDoc.exists || contractDoc.data()?.userId !== userId) {
+    const contractData = contractDoc.data();
+
+    if (!contractDoc.exists || contractData?.userId !== userId) {
       throw new Error("Contract not found or access denied");
     }
 
-    // Create payment intent with metadata
+    // Get creator's Stripe account information
+    const creatorUserId = contractData.creatorId;
+    const creatorDoc = await db.collection("users").doc(creatorUserId).get();
+    const creatorData = creatorDoc.data();
+
+    if (!creatorData?.stripeAccountId || !creatorData.stripeChargesEnabled) {
+      throw new Error("Creator does not have a valid Stripe account");
+    }
+
+    // Create payment intent with transfer to creator's account
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency,
+      transfer_data: {
+        destination: creatorData.stripeAccountId,
+      },
       metadata: {
         contractId,
         userId,
+        creatorId: creatorUserId,
       },
     });
 
@@ -99,6 +221,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       paymentIntentId: paymentIntent.id,
       contractId,
       userId,
+      creatorId: creatorUserId,
       amount,
       currency,
       status: paymentIntent.status,
@@ -222,5 +345,58 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
   } else {
     // Return a 200 response for other event types
     response.json({received: true});
+  }
+});
+
+// Handle Stripe Connected Account webhook
+export const handleStripeAccountWebhook = onRequest(async (request, response) => {
+  const sig = request.headers["stripe-signature"];
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!sig || !endpointSecret) {
+    logger.error("Missing stripe signature or webhook secret");
+    response.status(400).send("Missing stripe signature or webhook secret");
+    return;
+  }
+
+  try {
+    const event = stripe.webhooks.constructEvent(
+      request.body,
+      sig,
+      endpointSecret
+    );
+
+    if (event.type === "account.updated") {
+      const account = event.data.object as Stripe.Account;
+      const db = admin.firestore();
+
+      // Find user with this Stripe account ID
+      const usersRef = db.collection("users");
+      const snapshot = await usersRef
+        .where("stripeAccountId", "==", account.id)
+        .get();
+
+      if (snapshot.empty) {
+        logger.error("No user found with Stripe account ID:", account.id);
+        response.status(200).send("No user found");
+        return;
+      }
+
+      const userDoc = snapshot.docs[0];
+      const updates: Partial<UserData> = {
+        stripeChargesEnabled: account.charges_enabled,
+        stripePayoutsEnabled: account.payouts_enabled,
+        stripeAccountStatus: account.details_submitted ?
+          "active" :
+          "onboarding_incomplete",
+      };
+
+      await userDoc.ref.update(updates);
+    }
+
+    response.status(200).send("Webhook processed");
+  } catch (error) {
+    logger.error("Webhook error:", error);
+    response.status(400).send("Webhook error");
   }
 });

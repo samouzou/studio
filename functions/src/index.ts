@@ -7,8 +7,26 @@
  * - Scheduled tasks
  */
 
-// Export payment functions
-export * from "./payments";
+import * as admin from "firebase-admin";
+import {
+  createStripeConnectedAccount,
+  createStripeAccountLink,
+  createPaymentIntent,
+  handlePaymentSuccess,
+  handleStripeAccountWebhook,
+} from "./payments";
+
+// Initialize Firebase Admin
+admin.initializeApp();
+
+// Export payment-related functions
+export {
+  createStripeConnectedAccount,
+  createStripeAccountLink,
+  createPaymentIntent,
+  handlePaymentSuccess,
+  handleStripeAccountWebhook,
+};
 
 // Export notification functions
 export * from "./notifications";
