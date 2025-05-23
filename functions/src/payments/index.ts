@@ -349,18 +349,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
 });
 
 // Handle Stripe Connected Account webhook
-export const handleStripeAccountWebhook = onRequest(async (request, response) => {
-  // Set CORS headers
-  response.set("Access-Control-Allow-Origin", "*");
-  response.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.set("Access-Control-Allow-Headers", "Content-Type, Stripe-Signature");
-
-  // Handle preflight requests
-  if (request.method === "OPTIONS") {
-    response.status(204).send("");
-    return;
-  }
-  
+export const handleStripeAccountWebhook = onRequest(async (request, response) => {  
   const sig = request.headers["stripe-signature"];
   const endpointSecret = process.env.STRIPE_ACCOUNT_WEBHOOK_SECRET;
 
@@ -371,8 +360,15 @@ export const handleStripeAccountWebhook = onRequest(async (request, response) =>
   }
 
   try {
+    // Get the raw request body as a string
+    const rawBody = request.rawBody;
+    if (!rawBody) {
+      throw new Error("No raw body found in request");
+    }
+
+    // Verify the event using the raw body and signature
     const event = stripe.webhooks.constructEvent(
-      request.body,
+      rawBody,
       sig,
       endpointSecret
     );
