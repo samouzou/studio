@@ -208,7 +208,13 @@ export const createPaymentIntent = onRequest(async (request, response) => {
 
     // For public payments, verify the amount matches the contract
     if (!isAuthenticatedCreator) {
-      if (amount !== contractData.amount) {
+      // Convert amount to cents for comparison
+      const amountInCents = Math.round(amount * 100);
+      if (amountInCents !== contractData.amount) {
+        logger.error("Amount mismatch:", {
+          provided: amountInCents,
+          expected: contractData.amount,
+        });
         throw new Error("Invalid payment amount");
       }
       // For public payments, the payer is the contract's userId
@@ -224,9 +230,12 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       throw new Error("Creator does not have a valid Stripe account");
     }
 
+    // Convert amount to cents for Stripe
+    const amountInCents = Math.round(amount * 100);
+
     // Create payment intent with transfer to creator's account
     const paymentIntent = await stripe.paymentIntents.create({
-      amount,
+      amount: amountInCents,
       currency,
       transfer_data: {
         destination: creatorData.stripeAccountId,
@@ -245,7 +254,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       contractId,
       userId: userId || "",
       creatorId: creatorUserId,
-      amount,
+      amount: amountInCents,
       currency,
       status: paymentIntent.status,
       created: new Date(),
