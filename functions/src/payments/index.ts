@@ -176,25 +176,47 @@ export const createPaymentIntent = onRequest(async (request, response) => {
   }
 
   try {
-    // Verify authentication
-    const userId = await verifyAuthToken(request.headers.authorization);
-
     // Validate request body
     const {amount, currency = "usd", contractId} = request.body;
     if (!amount || !contractId) {
       throw new Error("Amount and contractId are required");
     }
 
-    // Verify user has access to this contract
+    // Get contract data
     const contractDoc = await db.collection("contracts").doc(contractId).get();
     const contractData = contractDoc.data();
+    
+    if (!contractDoc.exists || !contractData) {
+      throw new Error("Contract not found");
+    }
 
-    if (!contractDoc.exists || contractData?.userId !== userId) {
-      throw new Error("Contract not found or access denied");
+    // Determine if this is an authenticated creator payment or public client payment
+    let isAuthenticatedCreator = false;
+    let userId: string | null = null;
+
+    try {
+      // Try to verify auth token if present
+      if (request.headers.authorization) {
+        userId = await verifyAuthToken(request.headers.authorization);
+        // Check if the authenticated user is the creator
+        isAuthenticatedCreator = userId === contractData.creatorId;
+      }
+    } catch (error) {
+      // If auth fails, treat as unauthenticated public payment
+      logger.info("No valid auth token, treating as public payment");
+    }
+
+    // For public payments, verify the amount matches the contract
+    if (!isAuthenticatedCreator) {
+      if (amount !== contractData.amount) {
+        throw new Error("Invalid payment amount");
+      }
+      // For public payments, the payer is the contract's userId
+      userId = contractData.userId;
     }
 
     // Get creator's Stripe account information
-    const creatorUserId = contractData.userId;
+    const creatorUserId = contractData.creatorId;
     const creatorDoc = await db.collection("users").doc(creatorUserId).get();
     const creatorData = creatorDoc.data();
 
@@ -211,8 +233,9 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       },
       metadata: {
         contractId,
-        userId,
+        userId: userId || "",
         creatorId: creatorUserId,
+        paymentType: isAuthenticatedCreator ? "creator_payment" : "public_payment",
       },
     });
 
@@ -220,12 +243,13 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     await db.collection("paymentIntents").add({
       paymentIntentId: paymentIntent.id,
       contractId,
-      userId,
+      userId: userId || "",
       creatorId: creatorUserId,
       amount,
       currency,
       status: paymentIntent.status,
       created: new Date(),
+      paymentType: isAuthenticatedCreator ? "creator_payment" : "public_payment",
     });
 
     response.json({clientSecret: paymentIntent.client_secret});
