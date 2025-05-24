@@ -223,7 +223,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     }
 
     // Get creator's Stripe account information
-    const creatorUserId = contractData.creatorId;
+    const creatorUserId = contractData.userId;
     const creatorDoc = await db.collection("users").doc(creatorUserId).get();
     const creatorData = creatorDoc.data();
 
