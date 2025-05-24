@@ -176,25 +176,51 @@ export const createPaymentIntent = onRequest(async (request, response) => {
   }
 
   try {
-    // Verify authentication
-    const userId = await verifyAuthToken(request.headers.authorization);
-
     // Validate request body
     const {amount, currency = "usd", contractId} = request.body;
     if (!amount || !contractId) {
       throw new Error("Amount and contractId are required");
     }
 
-    // Verify user has access to this contract
+    // Get contract data
     const contractDoc = await db.collection("contracts").doc(contractId).get();
     const contractData = contractDoc.data();
+    
+    if (!contractDoc.exists || !contractData) {
+      throw new Error("Contract not found");
+    }
 
-    if (!contractDoc.exists || contractData?.userId !== userId) {
-      throw new Error("Contract not found or access denied");
+    // Determine if this is an authenticated creator payment or public client payment
+    let isAuthenticatedCreator = false;
+    let userId: string | null = null;
+
+    try {
+      // Try to verify auth token if present
+      if (request.headers.authorization) {
+        userId = await verifyAuthToken(request.headers.authorization);
+        // Check if the authenticated user is the creator
+        isAuthenticatedCreator = userId === contractData.creatorId;
+      }
+    } catch (error) {
+      // If auth fails, treat as unauthenticated public payment
+      logger.info("No valid auth token, treating as public payment");
+    }
+
+    // For public payments, verify the amount matches the contract
+    if (!isAuthenticatedCreator) {
+      if (amount !== contractData.amount) {
+        logger.error("Amount mismatch:", {
+          provided: amount,
+          expected: contractData.amount,
+        });
+        throw new Error("Invalid payment amount");
+      }
+      // For public payments, the payer is the contract's userId
+      userId = contractData.userId;
     }
 
     // Get creator's Stripe account information
-    const creatorUserId = contractData.userId;
+    const creatorUserId = contractData.creatorId;
     const creatorDoc = await db.collection("users").doc(creatorUserId).get();
     const creatorData = creatorDoc.data();
 
@@ -204,15 +230,16 @@ export const createPaymentIntent = onRequest(async (request, response) => {
 
     // Create payment intent with transfer to creator's account
     const paymentIntent = await stripe.paymentIntents.create({
-      amount,
+      amount: amount,
       currency,
       transfer_data: {
         destination: creatorData.stripeAccountId,
       },
       metadata: {
         contractId,
-        userId,
+        userId: userId || "",
         creatorId: creatorUserId,
+        paymentType: isAuthenticatedCreator ? "creator_payment" : "public_payment",
       },
     });
 
@@ -220,12 +247,13 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     await db.collection("paymentIntents").add({
       paymentIntentId: paymentIntent.id,
       contractId,
-      userId,
+      userId: userId || "",
       creatorId: creatorUserId,
-      amount,
+      amount: amountInCents,
       currency,
       status: paymentIntent.status,
       created: new Date(),
+      paymentType: isAuthenticatedCreator ? "creator_payment" : "public_payment",
     });
 
     response.json({clientSecret: paymentIntent.client_secret});
@@ -349,18 +377,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
 });
 
 // Handle Stripe Connected Account webhook
-export const handleStripeAccountWebhook = onRequest(async (request, response) => {
-  // Set CORS headers
-  response.set("Access-Control-Allow-Origin", "*");
-  response.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.set("Access-Control-Allow-Headers", "Content-Type, Stripe-Signature");
-
-  // Handle preflight requests
-  if (request.method === "OPTIONS") {
-    response.status(204).send("");
-    return;
-  }
-  
+export const handleStripeAccountWebhook = onRequest(async (request, response) => {  
   const sig = request.headers["stripe-signature"];
   const endpointSecret = process.env.STRIPE_ACCOUNT_WEBHOOK_SECRET;
 
@@ -371,8 +388,15 @@ export const handleStripeAccountWebhook = onRequest(async (request, response) =>
   }
 
   try {
+    // Get the raw request body as a string
+    const rawBody = request.rawBody;
+    if (!rawBody) {
+      throw new Error("No raw body found in request");
+    }
+
+    // Verify the event using the raw body and signature
     const event = stripe.webhooks.constructEvent(
-      request.body,
+      rawBody,
       sig,
       endpointSecret
     );
