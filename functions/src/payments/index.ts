@@ -228,12 +228,9 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       throw new Error("Creator does not have a valid Stripe account");
     }
 
-    // Convert amount to cents for Stripe (amount is in dollars)
-    const amountInCents = Math.round(amount * 100);
-
     // Create payment intent with transfer to creator's account
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountInCents,
+      amount: amount,
       currency,
       transfer_data: {
         destination: creatorData.stripeAccountId,
