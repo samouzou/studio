@@ -5,26 +5,23 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input'; // Though not used for input here, kept for consistency if needed later
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db, doc, getDoc } from '@/lib/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions'; // For calling cloud functions if needed
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
-import { StripePaymentForm } from '@/components/payments/stripe-payment-form'; 
+import { StripePaymentForm } from '@/components/payments/stripe-payment-form';
 import type { Contract } from '@/types';
-import { ArrowLeft, Loader2, AlertTriangle, CreditCard, ShieldCheck } from 'lucide-react';
-import Link from 'next/link';
+import { Loader2, AlertTriangle, CreditCard, ShieldCheck } from 'lucide-react';
 
 // This URL should point to your deployed createPaymentIntent Cloud Function
-// Ensure this function on the backend can handle requests for specific contract IDs
-// without requiring frontend user authentication, but by validating the contract itself.
+// This function on the backend should be able to handle requests for specific contract IDs
+// *without* requiring frontend user authentication if the payment is from a public link,
+// but by validating the contract itself and fetching its amount.
 const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/createPaymentIntent";
 
 export default function ClientPaymentPage() {
   const params = useParams();
-  const router = useRouter();
   const id = params.id as string;
   const { toast } = useToast();
 
@@ -53,15 +50,12 @@ export default function ClientPaymentPage() {
           const contractSnap = await getDoc(contractDocRef);
           if (contractSnap.exists()) {
             const data = contractSnap.data() as Contract;
-            // Check if already paid
             if (data.invoiceStatus === 'paid') {
               toast({ title: "Invoice Already Paid", description: "This invoice has already been settled.", variant: "default" });
-              // Optionally redirect or show a different UI
             }
             setContract({ ...data, id: contractSnap.id });
           } else {
             toast({ title: "Error", description: "Invoice not found or link is invalid.", variant: "destructive" });
-            // Potentially redirect to a generic error page or homepage
           }
         } catch (error) {
           console.error("Error fetching contract for payment:", error);
@@ -88,19 +82,17 @@ export default function ClientPaymentPage() {
     setClientSecret(null);
 
     try {
-      // IMPORTANT: The backend createPaymentIntent function for this public page
-      // should NOT require Firebase Auth from the client paying the invoice.
-      // It should validate the contractId and fetch amount/currency from Firestore.
       const response = await fetch(CREATE_PAYMENT_INTENT_FUNCTION_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // No Authorization header here, as the client paying is unauthenticated
+          // No Authorization header here for public payments,
+          // backend should verify contractId and fetch amount securely.
         },
         body: JSON.stringify({
-          contractId: contract.id, // Backend uses this to fetch contract details
-          // Amount and currency should be determined by the backend from the contractId
-          // to prevent tampering, not taken from this request body for public links.
+          contractId: contract.id,
+          amount: contract.amount * 100, // Send amount in cents
+          currency: 'usd', // Or derive from contract if it has a currency field
         }),
       });
 
@@ -114,9 +106,9 @@ export default function ClientPaymentPage() {
       if (!receivedClientSecret) {
         throw new Error("Client secret not received from payment intent function.");
       }
-      
+
       setClientSecret(receivedClientSecret);
-      setShowPaymentForm(true); // Show the form once client secret is fetched
+      setShowPaymentForm(true);
       toast({ title: "Payment Form Ready", description: "Please enter your card details below." });
 
     } catch (error: any) {
@@ -144,15 +136,14 @@ export default function ClientPaymentPage() {
         <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
         <h2 className="text-2xl font-semibold mb-2">Invoice Not Found</h2>
         <p className="text-muted-foreground mb-6">The payment link may be invalid or the invoice has been removed.</p>
-        {/* Consider a link back to the main website or a support page */}
       </div>
     );
   }
-  
+
   const appearance = {
     theme: 'stripe' as const,
     variables: {
-      colorPrimary: '#007bff', // Example primary color, adjust to your theme
+      colorPrimary: '#3F8CFF', // Verza Blue
     },
   };
   const elementsOptions = clientSecret ? { clientSecret, appearance } : undefined;
@@ -184,9 +175,9 @@ export default function ClientPaymentPage() {
                 </p>
                 <p className="text-muted-foreground">Amount Due</p>
               </div>
-              <Button 
-                onClick={handleInitiatePayment} 
-                disabled={isFetchingClientSecret || !stripePromise} 
+              <Button
+                onClick={handleInitiatePayment}
+                disabled={isFetchingClientSecret || !stripePromise}
                 className="w-full text-lg py-6 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md shadow-md hover:shadow-lg transition-all duration-150 ease-in-out"
                 size="lg"
               >
@@ -198,7 +189,7 @@ export default function ClientPaymentPage() {
             clientSecret && stripePromise && elementsOptions && (
               <div>
                 <p className="text-sm text-center text-muted-foreground mb-4">
-                  Please enter your payment details below. Total: 
+                  Please enter your payment details below. Total:
                   <span className="font-semibold text-slate-700"> ${contract.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </p>
                 <Elements stripe={stripePromise} options={elementsOptions}>
@@ -216,8 +207,9 @@ export default function ClientPaymentPage() {
         </CardContent>
       </Card>
        <p className="text-center text-xs text-muted-foreground mt-6">
-        Verza Contract Management &copy; {new Date().getFullYear()}
+        Verza &copy; {new Date().getFullYear()}
       </p>
     </div>
   );
 }
+
