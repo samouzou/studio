@@ -282,7 +282,7 @@ export default function ManageInvoicePage() {
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          amount: contract.amount * 100, 
+          amount: contract.amount, 
           currency: 'usd', 
           contractId: contract.id, 
         }),

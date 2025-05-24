@@ -91,7 +91,7 @@ export default function ClientPaymentPage() {
         },
         body: JSON.stringify({
           contractId: contract.id,
-          amount: contract.amount * 100, // Send amount in cents
+          amount: contract.amount, // Send amount in cents
           currency: 'usd', // Or derive from contract if it has a currency field
         }),
       });
