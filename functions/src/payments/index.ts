@@ -199,7 +199,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       if (request.headers.authorization) {
         userId = await verifyAuthToken(request.headers.authorization);
         // Check if the authenticated user is the creator
-        isAuthenticatedCreator = userId === contractData.creatorId;
+        isAuthenticatedCreator = userId === contractData.userId;
       }
     } catch (error) {
       // If auth fails, treat as unauthenticated public payment
