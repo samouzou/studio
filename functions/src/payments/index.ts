@@ -206,12 +206,15 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       logger.info("No valid auth token, treating as public payment");
     }
 
+    // Convert amount to cents for Stripe (amount is in dollars)
+    const amountInCents = Math.round(contractData.amount * 100);
+
     // For public payments, verify the amount matches the contract
     if (!isAuthenticatedCreator) {
-      if (amount !== contractData.amount) {
+      if (amount !== amountInCents) {
         logger.error("Amount mismatch:", {
           provided: amount,
-          expected: contractData.amount,
+          expected: amountInCents,
         });
         throw new Error("Invalid payment amount");
       }
