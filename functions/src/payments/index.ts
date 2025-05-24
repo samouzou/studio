@@ -249,7 +249,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       contractId,
       userId: userId || "",
       creatorId: creatorUserId,
-      amount: amountInCents,
+      amount: amount,
       currency,
       status: paymentIntent.status,
       created: new Date(),
