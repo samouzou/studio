@@ -21,8 +21,8 @@ import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/g
 import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react';
 import Link from 'next/link';
 
-const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://sendcontractnotification-zq2pbwya7a-uc.a.run.app";
-const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://createpaymentintent-zq2pbwya7a-uc.a.run.app";
+const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
+const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/createPaymentIntent";
 
 
 export default function ManageInvoicePage() {
@@ -265,7 +265,7 @@ export default function ManageInvoicePage() {
     }
 
     setIsFetchingClientSecret(true);
-    setClientSecret(null); // Reset previous secret
+    setClientSecret(null); 
 
     try {
       const idToken = await getUserIdToken();
@@ -282,9 +282,10 @@ export default function ManageInvoicePage() {
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          amount: contract.amount, 
+          amount: contract.amount * 100, 
           currency: 'usd', 
-          contractId: contract.id, 
+          contractId: contract.id,
+          clientEmail: contract.clientEmail || null, // Pass client's email
         }),
       });
 
@@ -336,9 +337,9 @@ export default function ManageInvoicePage() {
   const canSendInvoice = (!!generatedInvoiceHtml || !!contract.invoiceHtmlContent) && invoiceStatus === 'draft';
 
   const appearance = {
-    theme: 'stripe', // or 'night', 'flat'
+    theme: 'stripe' as const, 
     variables: {
-      colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(), // Example using CSS var
+      colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(), 
     },
   };
   const elementsOptions = clientSecret ? { clientSecret, appearance } : undefined;
@@ -426,7 +427,7 @@ export default function ManageInvoicePage() {
              <p className="text-xs text-muted-foreground">
                 The "Pay Now" link for client emails will use: {payUrl || "generating..."}
                 <br />
-                For direct payment via "Pay Invoice": ensure your backend `createPaymentIntent` function at {CREATE_PAYMENT_INTENT_FUNCTION_URL} passes `contractId` in metadata.
+                For direct payment via "Pay Invoice": ensure your backend `createPaymentIntent` function at {CREATE_PAYMENT_INTENT_FUNCTION_URL} passes relevant metadata.
              </p>
           </CardContent>
         </Card>
@@ -475,3 +476,6 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+
+
+    
