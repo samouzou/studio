@@ -280,7 +280,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
     return;
   }
 
-  let event: Stripe.Event;
+  // let event: Stripe.Event;
 
   try {
     // Get the raw request body as a string
@@ -290,33 +290,27 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
     }
 
     // Verify the event using the raw body and signature
-    event = stripe.webhooks.constructEvent(
+    const event = stripe.webhooks.constructEvent(
       rawBody,
       sig,
       endpointSecret
     );
-  } catch (err) {
-    logger.error("Webhook signature verification failed:", err);
-    response.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : "Unknown error"}`);
-    return;
-  }
 
-  // Handle the event
-  if (event.type === "payment_intent.succeeded") {
-    const paymentIntent = event.data.object as Stripe.PaymentIntent;
-    const {amount, currency, customer, metadata} = paymentIntent;
-    const {contractId, userId} = metadata;
+    // Handle the event
+    if (event.type === "payment_intent.succeeded") {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      const {amount, currency, customer, metadata} = paymentIntent;
+      const {contractId, userId} = metadata;
 
-    if (!contractId || !userId) {
-      logger.error("Missing contractId or userId in payment intent metadata");
-      response.status(400).send("Invalid payment intent metadata");
-      return;
-    }
+      if (!contractId || !userId) {
+        logger.error("Missing contractId or userId in payment intent metadata");
+        response.status(400).send("Invalid payment intent metadata");
+        return;
+      }
 
-    try {
       // Update contract status
       await db.collection("contracts").doc(contractId).update({
-        paymentStatus: "paid",
+        invoiceStatus: "paid",
         updatedAt: new Date(),
       });
 
@@ -364,18 +358,11 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
         status: "succeeded",
         timestamp: new Date(),
       });
-
-      response.json({received: true});
-    } catch (error) {
-      logger.error("Error processing successful payment:", error);
-      response.status(500).json({
-        error: "Failed to process payment",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  } else {
-    // Return a 200 response for other event types
+    } 
     response.json({received: true});
+  } catch (error) {
+    logger.error("Webhook error:", error);
+    response.status(400).send("Webhook error");
   }
 });
 
