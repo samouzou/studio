@@ -1,3 +1,4 @@
+
 {
   "functions": {
     "source": "functions",
@@ -9,7 +10,7 @@
   },
   "hosting": {
     "site": "sololedger-lite",
-    "public": "public",
+    "public": "firebase_hosting_static",
     "ignore": [
       "firebase.json",
       "**/.*",
