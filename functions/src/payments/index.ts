@@ -199,7 +199,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       if (request.headers.authorization) {
         userId = await verifyAuthToken(request.headers.authorization);
         // Check if the authenticated user is the creator
-        isAuthenticatedCreator = userId === contractData.creatorId;
+        isAuthenticatedCreator = userId === contractData.userId;
       }
     } catch (error) {
       // If auth fails, treat as unauthenticated public payment
@@ -220,7 +220,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     }
 
     // Get creator's Stripe account information
-    const creatorUserId = contractData.creatorId;
+    const creatorUserId = contractData.userId;
     const creatorDoc = await db.collection("users").doc(creatorUserId).get();
     const creatorData = creatorDoc.data();
 
@@ -228,9 +228,12 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       throw new Error("Creator does not have a valid Stripe account");
     }
 
+    // Convert amount to cents for Stripe (amount is in dollars)
+    const amountInCents = Math.round(amount * 100);
+
     // Create payment intent with transfer to creator's account
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount,
+      amount: amountInCents,
       currency,
       transfer_data: {
         destination: creatorData.stripeAccountId,
@@ -249,7 +252,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
       contractId,
       userId: userId || "",
       creatorId: creatorUserId,
-      amount: amount,
+      amount: amountInCents,
       currency,
       status: paymentIntent.status,
       created: new Date(),
