@@ -10,7 +10,7 @@
   },
   "hosting": {
     "site": "sololedger-lite",
-    "public": "firebase_hosting_static",
+    "public": "public",
     "ignore": [
       "firebase.json",
       "**/.*",
