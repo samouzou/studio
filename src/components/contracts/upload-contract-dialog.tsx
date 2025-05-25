@@ -15,16 +15,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { extractContractDetails, ExtractContractDetailsOutput } from "@/ai/flows/extract-contract-details";
-import { summarizeContractTerms, SummarizeContractTermsOutput } from "@/ai/flows/summarize-contract-terms";
+import { extractContractDetails, type ExtractContractDetailsOutput } from "@/ai/flows/extract-contract-details";
+import { summarizeContractTerms, type SummarizeContractTermsOutput } from "@/ai/flows/summarize-contract-terms";
 import { getNegotiationSuggestions, type NegotiationSuggestionsOutput } from "@/ai/flows/negotiation-suggestions-flow";
-import { Loader2, UploadCloud, FileText, Wand2, AlertTriangle } from "lucide-react";
+import { Loader2, UploadCloud, FileText, Wand2, AlertTriangle, ExternalLink, Sparkles } from "lucide-react";
 import type { Contract } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
-import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp, Timestamp, storage } from '@/lib/firebase'; // Firestore & Storage
-import { ref as storageRefOriginal, uploadBytes, getDownloadURL } from 'firebase/storage'; // Firebase Storage functions // Renamed to avoid conflict
+import { db, collection, addDoc, serverTimestamp as firebaseServerTimestamp, Timestamp, storage } from '@/lib/firebase';
+import { ref as storageRefOriginal, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import Link from "next/link";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 
 export function UploadContractDialog() {
   const [isOpen, setIsOpen] = useState(false);
@@ -42,11 +47,21 @@ export function UploadContractDialog() {
   const [negotiationSuggestions, setNegotiationSuggestions] = useState<NegotiationSuggestionsOutput | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
-  // New state for invoice-related fields
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientAddress, setClientAddress] = useState("");
   const [paymentInstructions, setPaymentInstructions] = useState("");
+
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceInterval, setRecurrenceInterval] = useState<Contract['recurrenceInterval'] | undefined>(undefined);
+
+
+  const now = Date.now();
+  const canPerformProAction =
+    user?.subscriptionStatus === 'active' ||
+    (user?.subscriptionStatus === 'trialing' &&
+      user.trialEndsAt &&
+      user.trialEndsAt.toMillis() > now);
 
   useEffect(() => {
     if (!isOpen) {
@@ -59,11 +74,12 @@ export function UploadContractDialog() {
       setNegotiationSuggestions(null);
       setParseError(null);
       setIsSaving(false);
-      // Reset new fields
       setClientName("");
       setClientEmail("");
       setClientAddress("");
       setPaymentInstructions("");
+      setIsRecurring(false);
+      setRecurrenceInterval(undefined);
     }
   }, [isOpen]);
 
@@ -112,6 +128,10 @@ export function UploadContractDialog() {
   const handleSaveContract = async () => {
     if (!user) {
       toast({ title: "Authentication Error", description: "You must be logged in to save a contract.", variant: "destructive" });
+      return;
+    }
+    if (!canPerformProAction) {
+      toast({ title: "Upgrade Required", description: "Please upgrade to Verza Pro to add new contracts.", variant: "destructive" });
       return;
     }
     if (!parsedDetails && !selectedFile && !contractText.trim()) {
@@ -186,6 +206,13 @@ export function UploadContractDialog() {
         contractDataForFirestore.paymentInstructions = trimmedPaymentInstructions;
       }
 
+      if (isRecurring) {
+        contractDataForFirestore.isRecurring = true;
+        if (recurrenceInterval) {
+          contractDataForFirestore.recurrenceInterval = recurrenceInterval;
+        }
+      }
+
 
       await addDoc(collection(db, 'contracts'), contractDataForFirestore);
       
@@ -220,7 +247,26 @@ export function UploadContractDialog() {
             Upload a contract file and/or paste its text. Fill in client details for invoicing.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="max-h-[calc(80vh-250px)]">
+        
+        {!canPerformProAction && (
+          <Alert variant="default" className="border-primary/50 bg-primary/5 text-primary-foreground [&>svg]:text-primary">
+            <Sparkles className="h-5 w-5" />
+            <AlertTitle className="font-semibold text-primary">Upgrade to Verza Pro</AlertTitle>
+            <AlertDescription className="text-primary/90">
+              Adding new contracts is a Pro feature. Please upgrade your plan to continue.
+              Your free trial may have ended or you are on the free plan.
+            </AlertDescription>
+            <div className="mt-3">
+                <Button variant="default" size="sm" asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  <Link href="/settings">
+                    Manage Subscription <ExternalLink className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+            </div>
+          </Alert>
+        )}
+
+        <ScrollArea className="max-h-[calc(80vh-250px-50px)]"> {/* Adjusted max height if alert is shown */}
         <div className="grid gap-6 p-1 pr-4">
            <div>
             <Label htmlFor="fileName">File Name (Optional - auto-fills on upload)</Label>
@@ -281,6 +327,41 @@ export function UploadContractDialog() {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-lg">Contract Recurrence (Optional)</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="isRecurring"
+                  checked={isRecurring}
+                  onCheckedChange={(checked) => setIsRecurring(checked as boolean)}
+                />
+                <Label htmlFor="isRecurring" className="font-normal">
+                  Is this a recurring contract?
+                </Label>
+              </div>
+              {isRecurring && (
+                <div>
+                  <Label htmlFor="recurrenceInterval">Recurrence Interval</Label>
+                  <Select
+                    value={recurrenceInterval}
+                    onValueChange={(value) => setRecurrenceInterval(value as Contract['recurrenceInterval'])}
+                  >
+                    <SelectTrigger id="recurrenceInterval" className="mt-1">
+                      <SelectValue placeholder="Select interval" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="annually">Annually</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
 
           <div>
             <Label htmlFor="contractText">Paste Contract Text (for AI Parsing)*</Label>
@@ -374,7 +455,10 @@ export function UploadContractDialog() {
         </ScrollArea>
         <DialogFooter className="pt-4 border-t">
           <Button variant="outline" onClick={() => setIsOpen(false)} disabled={isSaving}>Cancel</Button>
-          <Button onClick={handleSaveContract} disabled={isParsing || (!selectedFile && !contractText.trim() && !parsedDetails) || isSaving}>
+          <Button 
+            onClick={handleSaveContract} 
+            disabled={isParsing || (!selectedFile && !contractText.trim() && !parsedDetails) || isSaving || !canPerformProAction}
+          >
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Save Contract
           </Button>
@@ -383,4 +467,3 @@ export function UploadContractDialog() {
     </Dialog>
   );
 }
-
