@@ -176,17 +176,9 @@ export const createPaymentIntent = onRequest(async (request, response) => {
   }
 
   try {
-    // Log the request body for debugging
-    logger.info("Payment intent request body:", request.body);
-
     // Validate request body
     const {amount, currency = "usd", contractId} = request.body;
     if (!amount || !contractId) {
-      logger.error("Missing required fields:", {
-        amount: amount,
-        contractId: contractId,
-        body: request.body,
-      });
       throw new Error("Amount and contractId are required");
     }
 
@@ -197,13 +189,6 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     if (!contractDoc.exists || !contractData) {
       throw new Error("Contract not found");
     }
-
-    // Log contract data for debugging
-    logger.info("Contract data:", {
-      contractId,
-      amount: contractData.amount,
-      creatorId: contractData.userId,
-    });
 
     // Determine if this is an authenticated creator payment or public client payment
     let isAuthenticatedCreator = false;
