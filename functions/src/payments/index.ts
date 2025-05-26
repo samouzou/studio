@@ -185,7 +185,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     // Get contract data
     const contractDoc = await db.collection("contracts").doc(contractId).get();
     const contractData = contractDoc.data();
-    
+
     if (!contractDoc.exists || !contractData) {
       throw new Error("Contract not found");
     }
@@ -323,16 +323,16 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
       if (clientEmail) {
         emailForUserConfirmation = clientEmail;
       } else if (paymentType === "creator_payment" && userId) {
-          try {
-            const userRecord = await admin.auth().getUser(userId);
-            emailForUserConfirmation = userRecord.email || "";
-          } catch (e) { 
-              logger.error("Could not fetch creator email for confirmation", e); 
-          }
+        try {
+          const userRecord = await admin.auth().getUser(userId);
+          emailForUserConfirmation = userRecord.email || "";
+        } catch (e) {
+          logger.error("Could not fetch creator email for confirmation", e);
+        }
       } else if (customer) {
-          const customerData = await stripe.customers.retrieve(customer as string);
-          if (!customerData.deleted) {
-            emailForUserConfirmation = (customerData as Stripe.Customer).email || "";
+        const customerData = await stripe.customers.retrieve(customer as string);
+        if (!customerData.deleted) {
+          emailForUserConfirmation = (customerData as Stripe.Customer).email || "";
         }
       }
 
@@ -371,7 +371,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
         status: "succeeded",
         timestamp: new Date(),
       });
-    } 
+    }
     response.json({received: true});
   } catch (error) {
     logger.error("Webhook error:", error);
@@ -380,7 +380,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
 });
 
 // Handle Stripe Connected Account webhook
-export const handleStripeAccountWebhook = onRequest(async (request, response) => {  
+export const handleStripeAccountWebhook = onRequest(async (request, response) => {
   const sig = request.headers["stripe-signature"];
   const endpointSecret = process.env.STRIPE_ACCOUNT_WEBHOOK_SECRET;
 
