@@ -21,8 +21,8 @@ import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/g
 import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react';
 import Link from 'next/link';
 
-const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
-const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/createPaymentIntent";
+const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://sendcontractnotification-zq2pbwya7a-uc.a.run.app";
+const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://createpaymentintent-zq2pbwya7a-uc.a.run.app";
 
 
 export default function ManageInvoicePage() {
@@ -424,11 +424,11 @@ export default function ManageInvoicePage() {
                 </Button>
               )}
             </div>
-             <p className="text-xs text-muted-foreground">
+             {/* <p className="text-xs text-muted-foreground">
                 The "Pay Now" link for client emails will use: {payUrl || "generating..."}
                 <br />
                 For direct payment via "Pay Invoice": ensure your backend `createPaymentIntent` function at {CREATE_PAYMENT_INTENT_FUNCTION_URL} passes relevant metadata.
-             </p>
+             </p> */}
           </CardContent>
         </Card>
 
