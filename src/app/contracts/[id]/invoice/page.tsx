@@ -265,7 +265,7 @@ export default function ManageInvoicePage() {
     }
 
     setIsFetchingClientSecret(true);
-    setClientSecret(null); // Reset previous secret
+    setClientSecret(null); 
 
     try {
       const idToken = await getUserIdToken();
@@ -282,9 +282,10 @@ export default function ManageInvoicePage() {
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          amount: contract.amount, 
+          amount: contract.amount * 100, 
           currency: 'usd', 
-          contractId: contract.id, 
+          contractId: contract.id,
+          clientEmail: contract.clientEmail || null, // Pass client's email
         }),
       });
 
@@ -336,9 +337,9 @@ export default function ManageInvoicePage() {
   const canSendInvoice = (!!generatedInvoiceHtml || !!contract.invoiceHtmlContent) && invoiceStatus === 'draft';
 
   const appearance = {
-    theme: 'stripe', // or 'night', 'flat'
+    theme: 'stripe' as const, 
     variables: {
-      colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(), // Example using CSS var
+      colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(), 
     },
   };
   const elementsOptions = clientSecret ? { clientSecret, appearance } : undefined;
@@ -423,11 +424,11 @@ export default function ManageInvoicePage() {
                 </Button>
               )}
             </div>
-             <p className="text-xs text-muted-foreground">
+             {/* <p className="text-xs text-muted-foreground">
                 The "Pay Now" link for client emails will use: {payUrl || "generating..."}
                 <br />
-                For direct payment via "Pay Invoice": ensure your backend `createPaymentIntent` function at {CREATE_PAYMENT_INTENT_FUNCTION_URL} passes `contractId` in metadata.
-             </p>
+                For direct payment via "Pay Invoice": ensure your backend `createPaymentIntent` function at {CREATE_PAYMENT_INTENT_FUNCTION_URL} passes relevant metadata.
+             </p> */}
           </CardContent>
         </Card>
 
@@ -475,3 +476,6 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+
+
+    

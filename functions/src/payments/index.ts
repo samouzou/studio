@@ -185,7 +185,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     // Get contract data
     const contractDoc = await db.collection("contracts").doc(contractId).get();
     const contractData = contractDoc.data();
-    
+
     if (!contractDoc.exists || !contractData) {
       throw new Error("Contract not found");
     }
@@ -193,6 +193,8 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     // Determine if this is an authenticated creator payment or public client payment
     let isAuthenticatedCreator = false;
     let userId: string | null = null;
+    const emailForReceiptAndMetadata = contractData.clientEmail || null;
+
 
     try {
       // Try to verify auth token if present
@@ -242,8 +244,10 @@ export const createPaymentIntent = onRequest(async (request, response) => {
         contractId,
         userId: userId || "",
         creatorId: creatorUserId,
+        clientEmail: emailForReceiptAndMetadata,
         paymentType: isAuthenticatedCreator ? "creator_payment" : "public_payment",
       },
+      receipt_email: emailForReceiptAndMetadata,
     });
 
     // Log the payment intent creation
@@ -280,7 +284,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
     return;
   }
 
-  let event: Stripe.Event;
+  // let event: Stripe.Event;
 
   try {
     // Get the raw request body as a string
@@ -290,49 +294,52 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
     }
 
     // Verify the event using the raw body and signature
-    event = stripe.webhooks.constructEvent(
+    const event = stripe.webhooks.constructEvent(
       rawBody,
       sig,
       endpointSecret
     );
-  } catch (err) {
-    logger.error("Webhook signature verification failed:", err);
-    response.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : "Unknown error"}`);
-    return;
-  }
 
-  // Handle the event
-  if (event.type === "payment_intent.succeeded") {
-    const paymentIntent = event.data.object as Stripe.PaymentIntent;
-    const {amount, currency, customer, metadata} = paymentIntent;
-    const {contractId, userId} = metadata;
+    // Handle the event
+    if (event.type === "payment_intent.succeeded") {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      const {amount, currency, customer, metadata} = paymentIntent;
+      const {contractId, userId, clientEmail, paymentType} = metadata;
 
-    if (!contractId || !userId) {
-      logger.error("Missing contractId or userId in payment intent metadata");
-      response.status(400).send("Invalid payment intent metadata");
-      return;
-    }
+      if (!contractId || !userId) {
+        logger.error("Missing contractId or userId in payment intent metadata");
+        response.status(400).send("Invalid payment intent metadata");
+        return;
+      }
 
-    try {
       // Update contract status
       await db.collection("contracts").doc(contractId).update({
-        paymentStatus: "paid",
+        invoiceStatus: "paid",
         updatedAt: new Date(),
       });
 
       // Get customer email from Stripe
-      let customerEmail = "";
-      if (customer) {
+      let emailForUserConfirmation = "";
+      if (clientEmail) {
+        emailForUserConfirmation = clientEmail;
+      } else if (paymentType === "creator_payment" && userId) {
+        try {
+          const userRecord = await admin.auth().getUser(userId);
+          emailForUserConfirmation = userRecord.email || "";
+        } catch (e) {
+          logger.error("Could not fetch creator email for confirmation", e);
+        }
+      } else if (customer) {
         const customerData = await stripe.customers.retrieve(customer as string);
         if (!customerData.deleted) {
-          customerEmail = (customerData as Stripe.Customer).email || "";
+          emailForUserConfirmation = (customerData as Stripe.Customer).email || "";
         }
       }
 
       // Send confirmation email
-      if (customerEmail) {
+      if (emailForUserConfirmation) {
         const msg = {
-          to: customerEmail,
+          to: emailForUserConfirmation,
           from: process.env.SENDGRID_FROM_EMAIL || "serge@datatrixs.com",
           subject: "Payment Confirmation",
           text: `Your payment of ${amount / 100} ${currency.toUpperCase()} for contract ${contractId} has been received.`,
@@ -360,27 +367,20 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
         amount,
         currency,
         customerId: customer,
-        customerEmail,
+        emailForUserConfirmation,
         status: "succeeded",
         timestamp: new Date(),
       });
-
-      response.json({received: true});
-    } catch (error) {
-      logger.error("Error processing successful payment:", error);
-      response.status(500).json({
-        error: "Failed to process payment",
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
     }
-  } else {
-    // Return a 200 response for other event types
     response.json({received: true});
+  } catch (error) {
+    logger.error("Webhook error:", error);
+    response.status(400).send("Webhook error");
   }
 });
 
 // Handle Stripe Connected Account webhook
-export const handleStripeAccountWebhook = onRequest(async (request, response) => {  
+export const handleStripeAccountWebhook = onRequest(async (request, response) => {
   const sig = request.headers["stripe-signature"];
   const endpointSecret = process.env.STRIPE_ACCOUNT_WEBHOOK_SECRET;
 

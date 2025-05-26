@@ -8,18 +8,11 @@
     "codebase": "default"
   },
   "hosting": {
-    "site": "sololedger-lite",
     "public": "public",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "studio-1"
-      }
     ]
   },
   "apphosting": {
@@ -35,6 +28,6 @@
     "alwaysDeployFromSource": true
   },
   "frameworksBackend": {
-      "region": "us-central1"
-    }
+    "region": "us-central1"
+  }
 }
