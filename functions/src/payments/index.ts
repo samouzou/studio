@@ -193,6 +193,8 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     // Determine if this is an authenticated creator payment or public client payment
     let isAuthenticatedCreator = false;
     let userId: string | null = null;
+    const emailForReceiptAndMetadata = contractData.clientEmail || null;
+
 
     try {
       // Try to verify auth token if present
@@ -242,8 +244,10 @@ export const createPaymentIntent = onRequest(async (request, response) => {
         contractId,
         userId: userId || "",
         creatorId: creatorUserId,
+        clientEmail: emailForReceiptAndMetadata,
         paymentType: isAuthenticatedCreator ? "creator_payment" : "public_payment",
       },
+      receipt_email: emailForReceiptAndMetadata,
     });
 
     // Log the payment intent creation
@@ -300,7 +304,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
     if (event.type === "payment_intent.succeeded") {
       const paymentIntent = event.data.object as Stripe.PaymentIntent;
       const {amount, currency, customer, metadata} = paymentIntent;
-      const {contractId, userId} = metadata;
+      const {contractId, userId, clientEmail, paymentType} = metadata;
 
       if (!contractId || !userId) {
         logger.error("Missing contractId or userId in payment intent metadata");
@@ -315,18 +319,27 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
       });
 
       // Get customer email from Stripe
-      let customerEmail = "";
-      if (customer) {
-        const customerData = await stripe.customers.retrieve(customer as string);
-        if (!customerData.deleted) {
-          customerEmail = (customerData as Stripe.Customer).email || "";
+      let emailForUserConfirmation = "";
+      if (clientEmail) {
+        emailForUserConfirmation = clientEmail;
+      } else if (paymentType === "creator_payment" && userId) {
+          try {
+            const userRecord = await admin.auth().getUser(userId);
+            emailForUserConfirmation = userRecord.email || "";
+          } catch (e) { 
+              logger.error("Could not fetch creator email for confirmation", e); 
+          }
+      } else if (customer) {
+          const customerData = await stripe.customers.retrieve(customer as string);
+          if (!customerData.deleted) {
+            emailForUserConfirmation = (customerData as Stripe.Customer).email || "";
         }
       }
 
       // Send confirmation email
-      if (customerEmail) {
+      if (emailForUserConfirmation) {
         const msg = {
-          to: customerEmail,
+          to: emailForUserConfirmation,
           from: process.env.SENDGRID_FROM_EMAIL || "serge@datatrixs.com",
           subject: "Payment Confirmation",
           text: `Your payment of ${amount / 100} ${currency.toUpperCase()} for contract ${contractId} has been received.`,
@@ -354,7 +367,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
         amount,
         currency,
         customerId: customer,
-        customerEmail,
+        emailForUserConfirmation,
         status: "succeeded",
         timestamp: new Date(),
       });
