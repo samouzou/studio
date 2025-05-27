@@ -5,16 +5,19 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { functions } from '@/lib/firebase'; 
+import { getFunctions, httpsCallable, httpsCallableFromURL } from 'firebase/functions'; // Added httpsCallableFromURL
+import { functions } from '@/lib/firebase';
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CreditCard, Settings2, CheckCircle, XCircle, CalendarClock, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
-import { loadStripe } from '@stripe/stripe-js'; // Import loadStripe
+import { loadStripe } from '@stripe/stripe-js';
+
+// Define the new URL for the Cloud Function
+const CREATE_STRIPE_SUBSCRIPTION_CHECKOUT_SESSION_URL = "https://createstripesubscriptioncheckoutsession-zq2pbwya7a-uc.a.run.app";
 
 export function SubscriptionCard() {
-  const { user } = useAuth();
+  const { user, refreshAuthUser } = useAuth(); // Added refreshAuthUser
   const { toast } = useToast();
   const [isProcessingCheckout, setIsProcessingCheckout] = useState(false);
   const [isProcessingPortal, setIsProcessingPortal] = useState(false);
@@ -24,28 +27,39 @@ export function SubscriptionCard() {
   const handleSubscribe = async () => {
     setIsProcessingCheckout(true);
     try {
-      const firebaseFunctions = functions; 
-      const createCheckoutSessionCallable = httpsCallable(firebaseFunctions, 'createStripeSubscriptionCheckoutSession2');
-      const result = await createCheckoutSessionCallable();
+      const firebaseFunctions = getFunctions(); // Use getFunctions()
+      // Use httpsCallableFromURL with the specific URL
+      const createCheckoutSessionCallable = httpsCallableFromURL(firebaseFunctions, CREATE_STRIPE_SUBSCRIPTION_CHECKOUT_SESSION_URL);
+      
+      const result = await createCheckoutSessionCallable(); // No data needs to be passed for this specific function
       const { sessionId } = result.data as { sessionId: string };
       
       if (!sessionId) {
         throw new Error("Could not retrieve a valid session ID from Stripe.");
       }
 
-      if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
+      const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+      if (!stripePublishableKey) {
         console.error("Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is missing.");
-        toast({ title: "Stripe Error", description: "Stripe publishable key is not configured.", variant: "destructive", duration: 9000 });
+        toast({ title: "Stripe Error", description: "Stripe configuration is missing. Cannot proceed to checkout.", variant: "destructive", duration: 9000 });
         setIsProcessingCheckout(false);
         return;
       }
       
-      const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+      const stripe = await loadStripe(stripePublishableKey);
 
       if (stripe) {
-         await stripe.redirectToCheckout({ sessionId });
-         // redirectToCheckout should not resolve if successful, as it navigates away.
-         // If it resolves, it's usually an error.
+         const { error } = await stripe.redirectToCheckout({ sessionId });
+         if (error) {
+           console.error("Stripe redirectToCheckout error:", error);
+           toast({
+             title: "Redirection Error",
+             description: error.message || "Could not redirect to Stripe. Please try again.",
+             variant: "destructive",
+           });
+         }
+         // If redirectToCheckout is successful, the user is navigated away.
+         // If it fails and returns an error, it will be caught here.
       } else {
         console.error("Stripe.js failed to load.");
         toast({
@@ -74,7 +88,7 @@ export function SubscriptionCard() {
     }
     setIsProcessingPortal(true);
     try {
-      const firebaseFunctions = functions; 
+      const firebaseFunctions = getFunctions(); // Use getFunctions()
       const createPortalSessionCallable = httpsCallable(firebaseFunctions, 'createStripeCustomerPortalSession');
       const result = await createPortalSessionCallable(); 
       const { url } = result.data as { url: string };
@@ -101,8 +115,13 @@ export function SubscriptionCard() {
       if (timestamp.toDate && typeof timestamp.toDate === 'function') {
         return format(timestamp.toDate(), "PPP");
       }
+      // Check if it's a Firestore-like object { seconds: number, nanoseconds: number }
+      if (timestamp && typeof timestamp.seconds === 'number' && typeof timestamp.nanoseconds === 'number') {
+        return format(new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000), "PPP");
+      }
       return format(new Date(timestamp), "PPP");
     } catch (e) {
+      console.warn("Error formatting date:", e, "Timestamp value:", timestamp);
       return "Invalid Date";
     }
   };
