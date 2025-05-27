@@ -36,6 +36,10 @@ export interface Contract {
   invoiceHtmlContent?: string;
   invoiceNumber?: string;
   
+  // Recurrence fields
+  isRecurring?: boolean;
+  recurrenceInterval?: 'monthly' | 'quarterly' | 'annually';
+  
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -43,7 +47,8 @@ export interface Contract {
 export interface EarningsDataPoint {
   month: string; // e.g., "Jan", "Feb"
   year: number; // e.g., 2024
-  earnings: number;
+  collected: number;
+  invoiced: number;
 }
 
 export interface UpcomingIncome extends Pick<Contract, 'id' | 'brand' | 'amount' | 'dueDate' | 'projectName'> {}
