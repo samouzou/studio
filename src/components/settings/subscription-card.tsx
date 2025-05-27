@@ -25,7 +25,7 @@ export function SubscriptionCard() {
     setIsProcessingCheckout(true);
     try {
       const firebaseFunctions = functions; 
-      const createCheckoutSessionCallable = httpsCallable(firebaseFunctions, 'createStripeSubscriptionCheckoutSession');
+      const createCheckoutSessionCallable = httpsCallable(firebaseFunctions, 'createStripeSubscriptionCheckoutSession2');
       const result = await createCheckoutSessionCallable();
       const { sessionId } = result.data as { sessionId: string };
       
