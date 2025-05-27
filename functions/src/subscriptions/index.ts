@@ -49,7 +49,7 @@ try {
 
 
 // Create subscription checkout session
-export const createStripeSubscriptionCheckoutSession2 = onCall(async (request) => {
+export const createStripeSubscriptionCheckoutSession = onCall(async (request) => {
   if (!request.auth) {
     throw new Error("The function must be called while authenticated.");
   }
