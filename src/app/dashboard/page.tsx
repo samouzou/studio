@@ -19,7 +19,7 @@ import { DollarSign, FileText, AlertCircle, CalendarCheck, Loader2, AlertTriangl
 import { useAuth } from "@/hooks/use-auth";
 import { db, collection, query, where, getDocs, Timestamp } from '@/lib/firebase';
 import type { Contract, EarningsDataPoint, UpcomingIncome, AtRiskPayment } from "@/types";
-import { MOCK_EARNINGS_DATA } from "@/data/mock-data";
+// MOCK_EARNINGS_DATA is no longer needed
 import { Skeleton } from "@/components/ui/skeleton";
 
 const addDays = (date: Date, days: number): Date => {
@@ -35,7 +35,7 @@ interface DashboardStats {
   atRiskPaymentsCount: number;
   totalOverdueCount: number;
   paidThisMonthAmount: number;
-  invoicedThisMonthAmount: number;
+  invoicedThisMonthAmount: number; // For summary card
   upcomingIncomeList: UpcomingIncome[];
   atRiskPaymentsList: AtRiskPayment[];
   earningsChartData: EarningsDataPoint[];
@@ -46,6 +46,8 @@ const initialFilterState: DashboardFilterState = {
   project: "all",
   dateRange: undefined,
 };
+
+const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function DashboardPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -67,7 +69,6 @@ export default function DashboardPage() {
         spread: 70,
         origin: { y: 0.6 },
       });
-      // Clean the URL
       router.replace('/dashboard', { scroll: false });
     }
   }, [searchParams, router]);
@@ -142,6 +143,10 @@ export default function DashboardPage() {
       const projectMatch = filters.project === "all" || c.projectName === filters.project;
       
       let dateMatch = true;
+      // Date filter should apply to dueDate for pending/upcoming items
+      // and updatedAt for paid items if we want to filter by payment date.
+      // For simplicity here, we'll primarily filter based on dueDate for items shown in lists.
+      // The chart and monthly summaries will do their own monthly aggregation.
       if (c.dueDate && filters.dateRange?.from) { 
         const contractDueDate = new Date(c.dueDate + 'T00:00:00'); 
         const fromDate = new Date(filters.dateRange.from.getFullYear(), filters.dateRange.from.getMonth(), filters.dateRange.from.getDate());
@@ -166,55 +171,67 @@ export default function DashboardPage() {
     const upcomingIncomeSource: UpcomingIncome[] = [];
     const atRiskPaymentsListSource: AtRiskPayment[] = [];
     let totalPendingIncomeCalc = 0;
-    let paidThisMonthAmountCalc = 0;
-    let invoicedThisMonthAmountCalc = 0;
+    let currentPaidThisMonthAmount = 0;
+    let currentInvoicedThisMonthAmountForSummary = 0; // For summary card
     let currentTotalOverdueCountCalc = 0;
+
+    // Initialize chart data for current year
+    const newEarningsChartData: EarningsDataPoint[] = monthNames.map(monthName => ({
+      month: monthName,
+      year: currentYear,
+      collected: 0,
+      invoiced: 0,
+    }));
 
     filteredContracts.forEach(c => {
       const contractDueDate = c.dueDate ? new Date(c.dueDate + 'T00:00:00') : null;
-      const primaryStatus = c.status; // This will be the effective status considering invoice
       const invoiceStatus = c.invoiceStatus || 'none';
       const updatedAtDate = c.updatedAt instanceof Timestamp ? c.updatedAt.toDate() : (c.updatedAt ? new Date(c.updatedAt as any) : null);
-
-
+      
       let isEffectivelyOverdue = false;
       if (invoiceStatus === 'overdue') {
         isEffectivelyOverdue = true;
       } else if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed') && contractDueDate && contractDueDate < todayMidnight) {
         isEffectivelyOverdue = true;
-      } else if (primaryStatus === 'overdue' && invoiceStatus !== 'paid') { 
-        isEffectivelyOverdue = true;
+      } else if (c.status === 'overdue' && invoiceStatus !== 'paid') {
+         isEffectivelyOverdue = true;
       }
-      
+
+
       if (isEffectivelyOverdue) {
         currentTotalOverdueCountCalc++;
         atRiskPaymentsListSource.push({
           id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate,
           status: 'overdue', riskReason: 'Payment overdue', projectName: c.projectName,
         });
-      } else if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed' || primaryStatus === 'pending' ) && invoiceStatus !== 'paid' && contractDueDate && contractDueDate >= todayMidnight && contractDueDate < sevenDaysFromTodayMidnight) {
+      } else if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed' || c.status === 'pending') && invoiceStatus !== 'paid' && contractDueDate && contractDueDate >= todayMidnight && contractDueDate < sevenDaysFromTodayMidnight) {
          atRiskPaymentsListSource.push({
           id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate,
-          status: primaryStatus, 
+          status: c.status, 
           riskReason: 'Due soon', 
           projectName: c.projectName,
         });
       }
 
-      if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed') && contractDueDate && contractDueDate >= todayMidnight) {
+      if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed' || c.status === 'pending') && invoiceStatus !== 'paid' && contractDueDate && contractDueDate >= todayMidnight) {
         upcomingIncomeSource.push({ id: c.id, brand: c.brand, amount: c.amount, dueDate: c.dueDate, projectName: c.projectName });
         totalPendingIncomeCalc += c.amount;
       }
       
-      if (invoiceStatus === 'paid' && updatedAtDate) {
-        if (updatedAtDate.getMonth() === currentMonth && updatedAtDate.getFullYear() === currentYear) {
-          paidThisMonthAmountCalc += c.amount;
+      // Calculate for chart and monthly summaries
+      if (invoiceStatus === 'paid' && updatedAtDate && updatedAtDate.getFullYear() === currentYear) {
+        const paymentMonth = updatedAtDate.getMonth();
+        newEarningsChartData[paymentMonth].collected += c.amount;
+        if (paymentMonth === currentMonth) {
+          currentPaidThisMonthAmount += c.amount;
         }
       }
       
-      if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed') && updatedAtDate) {
-         if (updatedAtDate.getMonth() === currentMonth && updatedAtDate.getFullYear() === currentYear) {
-          invoicedThisMonthAmountCalc += c.amount;
+      if ((invoiceStatus === 'sent' || invoiceStatus === 'viewed') && invoiceStatus !== 'paid' && contractDueDate && contractDueDate.getFullYear() === currentYear) {
+        const dueMonth = contractDueDate.getMonth();
+        newEarningsChartData[dueMonth].invoiced += c.amount;
+        if (dueMonth === currentMonth) {
+          currentInvoicedThisMonthAmountForSummary += c.amount;
         }
       }
     });
@@ -234,11 +251,11 @@ export default function DashboardPage() {
       totalContractsCount: allContracts.length, 
       atRiskPaymentsCount: atRiskPaymentsListSource.length,
       totalOverdueCount: currentTotalOverdueCountCalc,
-      paidThisMonthAmount: paidThisMonthAmountCalc,
-      invoicedThisMonthAmount: invoicedThisMonthAmountCalc,
+      paidThisMonthAmount: currentPaidThisMonthAmount,
+      invoicedThisMonthAmount: currentInvoicedThisMonthAmountForSummary,
       upcomingIncomeList: upcomingIncomeSource,
       atRiskPaymentsList: atRiskPaymentsListSource,
-      earningsChartData: MOCK_EARNINGS_DATA, 
+      earningsChartData: newEarningsChartData, 
     });
 
   }, [allContracts, filters, user, isLoadingData]);
@@ -260,8 +277,8 @@ export default function DashboardPage() {
           onFiltersChange={handleFiltersChange}
           initialFilters={initialFilterState} 
         />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mb-6">
-          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 mb-6">
+          {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
         </div>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
@@ -385,4 +402,3 @@ export default function DashboardPage() {
     </>
   );
 }
-
