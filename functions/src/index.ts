@@ -31,13 +31,13 @@ export * from "./notifications";
 export * from "./scheduler";
 
 import {
-  createStripeSubscriptionCheckoutSession,
+  createStripeSubscriptionCheckoutSession2,
   createStripeCustomerPortalSession,
   stripeSubscriptionWebhookHandler,
 } from "./subscriptions";
 
 export {
-  createStripeSubscriptionCheckoutSession,
+  createStripeSubscriptionCheckoutSession2,
   createStripeCustomerPortalSession,
   stripeSubscriptionWebhookHandler,
 };
