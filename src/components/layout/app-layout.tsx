@@ -2,6 +2,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import * as React from "react"; // Added import for React
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { useAuth } from "@/hooks/use-auth";
