@@ -24,7 +24,7 @@ env:
 
   # Stripe key
   - variable: STRIPE_SECRET_KEY
-    secret: VERZA-STRIPE-SECRET-KEY
+    secret: VERZA_STRIPE_SECRET_KEY
   
   - variable: STRIPE_SUBSCRIPTION_WEBHOOK_SECRET
     secret: VERZA_SUBSCRIPTION_WEBHOOK_SECRET
