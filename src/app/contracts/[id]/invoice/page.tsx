@@ -11,19 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-import { getFunctions, httpsCallableFromURL } from 'firebase/functions'; // Use httpsCallableFromURL
+import { db, doc, getDoc, updateDoc, Timestamp, arrayUnion, serverTimestamp } from '@/lib/firebase';
+import { getFunctions, httpsCallableFromURL } from 'firebase/functions';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
-import { StripePaymentForm } from '@/components/payments/stripe-payment-form'; 
+import { StripePaymentForm } from '@/components/payments/stripe-payment-form';
 import type { Contract } from '@/types';
 import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/generate-invoice-html-flow';
 import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react';
 import Link from 'next/link';
 
-// URL for your deployed Cloud Function for CREATING payment intents for the creator's connected account
 const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/createPaymentIntent";
-// URL for your deployed Cloud Function for sending notifications
 const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
 
 
@@ -42,7 +40,7 @@ export default function ManageInvoicePage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  
+
   const [isFetchingClientSecret, setIsFetchingClientSecret] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
@@ -93,7 +91,7 @@ export default function ManageInvoicePage() {
       router.push('/login');
     }
   }, [id, user, authLoading, router, toast]);
-  
+
 
   const handleGenerateInvoice = async () => {
     if (!contract || !user || !invoiceNumber) {
@@ -113,21 +111,21 @@ export default function ManageInvoicePage() {
 
 
       const input: GenerateInvoiceHtmlInput = {
-        creatorName: user.displayName || "Your Name/Company",
-        creatorAddress: user.address || "Your Address, City, Country", // Use user's address
-        creatorEmail: user.email || "your@email.com",
-        clientName: contract.clientName || contract.brand,
-        clientAddress: contract.clientAddress,
-        clientEmail: contract.clientEmail,
+        creatorName: user.displayName || undefined,
+        creatorAddress: user.address || undefined,
+        creatorEmail: user.email || undefined,
+        clientName: contract.clientName || undefined,
+        clientAddress: contract.clientAddress || undefined,
+        clientEmail: contract.clientEmail || undefined,
         invoiceNumber: invoiceNumber,
         invoiceDate: new Date().toISOString().split('T')[0],
         dueDate: contract.dueDate,
         contractId: contract.id,
-        projectName: contract.projectName,
+        projectName: contract.projectName || undefined,
         deliverables: deliverablesForAI,
         totalAmount: contract.amount,
-        paymentInstructions: contract.paymentInstructions,
-        payInvoiceLink: currentPayUrl,
+        paymentInstructions: contract.paymentInstructions || undefined,
+        payInvoiceLink: currentPayUrl || undefined,
       };
       const result = await generateInvoiceHtml(input);
       setGeneratedInvoiceHtml(result.invoiceHtml);
@@ -148,12 +146,20 @@ export default function ManageInvoicePage() {
     setIsSaving(true);
     try {
       const contractDocRef = doc(db, 'contracts', contract.id);
-      const newStatus = invoiceStatus === 'none' ? 'draft' : invoiceStatus; 
+      const newStatus = invoiceStatus === 'none' ? 'draft' : invoiceStatus;
+
+      const historyEntry = {
+        timestamp: Timestamp.now(), // Use client-generated timestamp for arrayUnion
+        action: `Invoice Saved (Status: ${newStatus})`,
+        details: `Invoice number: ${invoiceNumber}`,
+      };
+
       await updateDoc(contractDocRef, {
         invoiceHtmlContent: generatedInvoiceHtml,
         invoiceNumber: invoiceNumber,
         invoiceStatus: newStatus,
-        updatedAt: Timestamp.now(),
+        invoiceHistory: arrayUnion(historyEntry),
+        updatedAt: serverTimestamp(),
       });
       setContract(prev => prev ? {...prev, invoiceHtmlContent: generatedInvoiceHtml, invoiceNumber: invoiceNumber, invoiceStatus: newStatus } : null);
       setInvoiceStatus(newStatus);
@@ -169,12 +175,18 @@ export default function ManageInvoicePage() {
 
   const handleStatusChange = async (newStatus: Contract['invoiceStatus']) => {
     if (!contract || !newStatus) return;
-    setIsSaving(true); 
+    setIsSaving(true);
     try {
       const contractDocRef = doc(db, 'contracts', contract.id);
+      const historyEntry = {
+        timestamp: Timestamp.now(), // Use client-generated timestamp for arrayUnion
+        action: `Invoice Status Changed to ${newStatus}`,
+         details: `Previous status: ${invoiceStatus}`,
+      };
       await updateDoc(contractDocRef, {
         invoiceStatus: newStatus,
-        updatedAt: Timestamp.now(),
+        invoiceHistory: arrayUnion(historyEntry),
+        updatedAt: serverTimestamp(),
       });
       setContract(prev => prev ? {...prev, invoiceStatus: newStatus} : null);
       setInvoiceStatus(newStatus);
@@ -209,12 +221,13 @@ export default function ManageInvoicePage() {
 
       const invoiceContentToSend = generatedInvoiceHtml || contract.invoiceHtmlContent;
       const currentPayUrl = typeof window !== 'undefined' ? `${window.location.origin}/pay/contract/${id}` : "";
-      
+
       const emailBody = {
         to: contract.clientEmail,
         subject: `Invoice ${invoiceNumber || contract.invoiceNumber} from ${user.displayName || 'Your Service Provider'}`,
         text: `Hello ${contract.clientName || contract.brand},\n\nPlease find attached your invoice ${invoiceNumber || contract.invoiceNumber} for ${contract.projectName || 'services rendered'}.\n\nTotal Amount Due: $${contract.amount}\nDue Date: ${new Date(contract.dueDate).toLocaleDateString()}\n\nClick here to pay: ${currentPayUrl}\n\nThank you,\n${user.displayName || 'Your Service Provider'}`,
-        html: invoiceContentToSend, 
+        html: invoiceContentToSend,
+        contractId: contract.id,
       };
 
       const response = await fetch(SEND_CONTRACT_NOTIFICATION_FUNCTION_URL, {
@@ -228,18 +241,23 @@ export default function ManageInvoicePage() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to send email. Status: ${response.status}`);
+        throw new Error(errorData.message || `Failed to send email. Status: ${response.status}`);
       }
 
       const contractDocRef = doc(db, 'contracts', contract.id);
+      const historyEntry = {
+        timestamp: Timestamp.now(), // Use client-generated timestamp for arrayUnion
+        action: 'Invoice Sent to Client',
+        details: `To: ${contract.clientEmail}`,
+      };
       await updateDoc(contractDocRef, {
         invoiceStatus: 'sent',
-        updatedAt: Timestamp.now(),
+        invoiceHistory: arrayUnion(historyEntry),
+        updatedAt: serverTimestamp(),
       });
       setContract(prev => prev ? {...prev, invoiceStatus: 'sent' } : null);
       setInvoiceStatus('sent');
       toast({ title: "Invoice Sent", description: `Invoice ${invoiceNumber} sent to ${contract.clientEmail}.` });
-      console.log(`LOG: Invoice ${invoiceNumber} sent to ${contract.clientEmail} for contract ID: ${contract.id}.`);
 
     } catch (error: any) {
       console.error("Error sending invoice:", error);
@@ -260,14 +278,9 @@ export default function ManageInvoicePage() {
       console.error("Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is missing.");
       return;
     }
-    if (CREATE_PAYMENT_INTENT_FUNCTION_URL === "YOUR_CREATE_PAYMENT_INTENT_FUNCTION_URL_HERE") {
-      toast({ title: "Configuration Error", description: "Payment intent function URL is not configured.", variant: "destructive" });
-      console.error("CREATE_PAYMENT_INTENT_FUNCTION_URL is a placeholder and needs to be updated with your actual function URL.");
-      return;
-    }
 
     setIsFetchingClientSecret(true);
-    setClientSecret(null); 
+    setClientSecret(null);
 
     try {
       const idToken = await getUserIdToken();
@@ -284,10 +297,10 @@ export default function ManageInvoicePage() {
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          amount: contract.amount * 100, 
-          currency: 'usd', 
+          amount: contract.amount * 100,
+          currency: 'usd',
           contractId: contract.id,
-          clientEmail: contract.clientEmail || null, // Pass client's email for creator-initiated payment
+          clientEmail: contract.clientEmail || undefined,
         }),
       });
 
@@ -301,7 +314,7 @@ export default function ManageInvoicePage() {
       if (!receivedClientSecret) {
         throw new Error("Client secret not received from payment intent function.");
       }
-      
+
       setClientSecret(receivedClientSecret);
       toast({ title: "Payment Form Ready", description: "Please enter your card details below." });
 
@@ -317,7 +330,7 @@ export default function ManageInvoicePage() {
   if (isLoadingContract || authLoading) {
     return (
       <div className="space-y-4 p-4">
-        <Skeleton className="h-10 w-1/2" /> <Skeleton className="h-8 w-1/3" />
+        <PageHeader title="Manage Invoice" description="Loading contract details..." />
         <Card><CardContent className="p-6"><Skeleton className="h-64 w-full" /></CardContent></Card>
       </div>
     );
@@ -336,12 +349,12 @@ export default function ManageInvoicePage() {
   }
 
   const canPay = (invoiceStatus === 'draft' || invoiceStatus === 'sent' || invoiceStatus === 'overdue') && contract.amount > 0 && !clientSecret;
-  const canSendInvoice = (!!generatedInvoiceHtml || !!contract.invoiceHtmlContent) && invoiceStatus === 'draft';
+  const canSendInvoice = (!!generatedInvoiceHtml || !!contract.invoiceHtmlContent) && (invoiceStatus === 'draft' || invoiceStatus === 'none');
 
   const appearance = {
-    theme: 'stripe' as const, 
+    theme: 'stripe' as const,
     variables: {
-      colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(), 
+      colorPrimary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
     },
   };
   const elementsOptions = clientSecret ? { clientSecret, appearance } : undefined;
@@ -373,10 +386,10 @@ export default function ManageInvoicePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
               <div>
                 <label htmlFor="invoiceNumberInput" className="block text-sm font-medium text-muted-foreground mb-1">Invoice Number</label>
-                <Input 
+                <Input
                   id="invoiceNumberInput"
-                  type="text" 
-                  value={invoiceNumber} 
+                  type="text"
+                  value={invoiceNumber}
                   onChange={(e) => setInvoiceNumber(e.target.value)}
                   placeholder="Enter Invoice Number (e.g. INV-001)"
                   className="max-w-sm"
@@ -384,8 +397,8 @@ export default function ManageInvoicePage() {
               </div>
               <div>
                 <label htmlFor="invoiceStatusSelect" className="block text-sm font-medium text-muted-foreground mb-1">Invoice Status</label>
-                 <Select 
-                    value={invoiceStatus || 'none'} 
+                 <Select
+                    value={invoiceStatus || 'none'}
                     onValueChange={(value) => handleStatusChange(value as Contract['invoiceStatus'])}
                     disabled={isSaving || isLoadingContract || isSending || !!clientSecret}
                   >
@@ -403,7 +416,7 @@ export default function ManageInvoicePage() {
                 </Select>
               </div>
             </div>
-            
+
             <div className="flex flex-wrap gap-2 pt-2">
               <Button onClick={handleGenerateInvoice} disabled={isGenerating || isSaving || isFetchingClientSecret || isSending || !invoiceNumber || !!clientSecret}>
                 {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
@@ -414,18 +427,21 @@ export default function ManageInvoicePage() {
                 Save Invoice
               </Button>
               {canSendInvoice && (
-                <Button onClick={handleSendInvoice} disabled={isSending || isGenerating || isSaving || isFetchingClientSecret || !!clientSecret}>
+                <Button onClick={handleSendInvoice} disabled={isSending || isGenerating || isSaving || isFetchingClientSecret || !!clientSecret || !contract.clientEmail}>
                   {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                   Send to Client
                 </Button>
               )}
-               {canPay && ( 
+               {canPay && (
                 <Button onClick={handleInitiatePayment} disabled={isFetchingClientSecret || isGenerating || isSaving || isSending || !stripePromise} variant="default">
                   {isFetchingClientSecret ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
                   Pay Invoice (${contract.amount.toLocaleString()})
                 </Button>
               )}
             </div>
+            {!contract.clientEmail && canSendInvoice && (
+                <p className="text-xs text-destructive">Client email is missing. Please add it to the contract to enable sending.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -473,3 +489,4 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+

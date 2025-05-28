@@ -315,7 +315,12 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
       // Update contract status
       await db.collection("contracts").doc(contractId).update({
         invoiceStatus: "paid",
-        updatedAt: new Date(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        invoiceHistory: admin.firestore.FieldValue.arrayUnion({
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          action: "Invoice Paid",
+          details: `PaymentIntent ID: ${paymentIntent.id}`,
+        }),
       });
 
       // Get customer email from Stripe
@@ -369,7 +374,7 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
         customerId: customer,
         emailForUserConfirmation,
         status: "succeeded",
-        timestamp: new Date(),
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
     response.json({received: true});

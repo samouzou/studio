@@ -29,9 +29,10 @@ import {
   deleteDoc,
   updateDoc,
   writeBatch,
-  onSnapshot
+  onSnapshot,
+  arrayUnion // Added arrayUnion
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Ensured deleteObject is imported
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
 
 const firebaseConfigValues = {
@@ -43,13 +44,19 @@ const firebaseConfigValues = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Check if essential config values are present
 if (!firebaseConfigValues.apiKey || !firebaseConfigValues.projectId) {
+  const missingKeys = [];
+  if (!firebaseConfigValues.apiKey) missingKeys.push("NEXT_PUBLIC_FIREBASE_API_KEY");
+  if (!firebaseConfigValues.projectId) missingKeys.push("NEXT_PUBLIC_FIREBASE_PROJECT_ID");
+
   throw new Error(
-    "Firebase API Key or Project ID is missing. " +
-    "Please ensure NEXT_PUBLIC_FIREBASE_API_KEY and NEXT_PUBLIC_FIREBASE_PROJECT_ID are set in your .env file. " +
+    `Firebase configuration error: The following environment variables are missing: ${missingKeys.join(", ")}. ` +
+    "Please ensure they are set in your .env.local file (for local development) or in your hosting provider's environment settings. " +
     "The application cannot connect to Firebase without them."
   );
 }
+
 
 const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 
@@ -93,8 +100,9 @@ export {
   updateDoc,
   writeBatch,
   onSnapshot,
-  ref, // Export 'ref' directly
+  ref,
   uploadBytes,
   getDownloadURL,
-  deleteObject
+  deleteObject,
+  arrayUnion // Export arrayUnion
 };
