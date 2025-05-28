@@ -1,37 +1,37 @@
 
 import { initializeApp, getApps, getApp, type FirebaseOptions } from 'firebase/app';
-import { 
-  getAuth, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged, 
-  createUserWithEmailAndPassword, 
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updateProfile, 
-  sendPasswordResetEmail, 
-  sendEmailVerification, // Added
-  type User as FirebaseUser 
+  updateProfile,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  type User as FirebaseUser
 } from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
-  addDoc, 
-  serverTimestamp, 
-  Timestamp, 
-  query, 
-  orderBy, 
-  where, 
-  deleteDoc, 
+import {
+  getFirestore,
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  addDoc,
+  serverTimestamp,
+  Timestamp,
+  query,
+  orderBy,
+  where,
+  deleteDoc,
   updateDoc,
   writeBatch,
-  onSnapshot 
+  onSnapshot
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'; 
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'; // Ensured deleteObject is imported
 import { getFunctions } from 'firebase/functions';
 
 const firebaseConfigValues = {
@@ -56,43 +56,45 @@ const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app); 
-const functions = getFunctions(app); 
-const googleAuthProvider = new GoogleAuthProvider(); 
+const storage = getStorage(app);
+const functions = getFunctions(app);
+const googleAuthProvider = new GoogleAuthProvider();
 
 
-export { 
-  app, 
-  auth, 
-  db, 
-  storage, 
-  functions, 
-  googleAuthProvider, 
+export {
+  app,
+  auth,
+  db,
+  storage,
+  functions,
+  GoogleAuthProvider,
+  googleAuthProvider,
   signInWithPopup,
   signOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  sendPasswordResetEmail, 
-  sendEmailVerification, // Exported
-  updateProfile, 
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  updateProfile,
   type FirebaseUser,
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
-  addDoc, 
-  serverTimestamp, 
-  Timestamp, 
-  query, 
-  orderBy, 
-  where, 
-  deleteDoc, 
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  addDoc,
+  serverTimestamp,
+  Timestamp,
+  query,
+  orderBy,
+  where,
+  deleteDoc,
   updateDoc,
   writeBatch,
   onSnapshot,
-  ref as storageRef, 
-  uploadBytes, 
-  getDownloadURL
+  ref, // Export 'ref' directly
+  uploadBytes,
+  getDownloadURL,
+  deleteObject
 };
