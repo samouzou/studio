@@ -47,7 +47,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </Alert>
           )}
-          <div className="mx-auto max-w-7xl">
+          {/* Removed mx-auto and max-w-7xl to make content area full width */}
+          <div className=""> 
             {children}
           </div>
         </main>
