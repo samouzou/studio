@@ -35,6 +35,8 @@ export interface Contract {
   invoiceStatus?: 'none' | 'draft' | 'sent' | 'viewed' | 'paid' | 'overdue';
   invoiceHtmlContent?: string;
   invoiceNumber?: string;
+  invoiceHistory?: Array<{ timestamp: Timestamp; action: string; details?: string }>;
+  lastReminderSentAt?: Timestamp | null;
   
   // Recurrence fields
   isRecurring?: boolean;
@@ -55,4 +57,25 @@ export interface UpcomingIncome extends Pick<Contract, 'id' | 'brand' | 'amount'
 
 export interface AtRiskPayment extends Pick<Contract, 'id' | 'brand' | 'amount' | 'dueDate' | 'status' | 'projectName'> {
   riskReason: string;
+}
+
+// For Firestore user document
+export interface UserProfileFirestoreData {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  emailVerified: boolean;
+  address?: string | null;
+  createdAt?: Timestamp;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  subscriptionStatus?: 'trialing' | 'active' | 'past_due' | 'canceled' | 'incomplete' | 'none';
+  trialEndsAt?: Timestamp | null;
+  subscriptionEndsAt?: Timestamp | null;
+  trialExtensionUsed?: boolean;
+  stripeAccountId?: string | null;
+  stripeAccountStatus?: 'none' | 'onboarding_incomplete' | 'pending_verification' | 'active' | 'restricted' | 'restricted_soon';
+  stripeChargesEnabled?: boolean;
+  stripePayoutsEnabled?: boolean;
 }

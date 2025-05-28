@@ -11,8 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-import { getFunctions, httpsCallableFromURL } from 'firebase/functions'; // Use httpsCallableFromURL
+import { db, doc, getDoc, updateDoc, Timestamp, arrayUnion, serverTimestamp } from '@/lib/firebase';
+import { getFunctions, httpsCallableFromURL } from 'firebase/functions';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { StripePaymentForm } from '@/components/payments/stripe-payment-form'; 
@@ -21,9 +21,7 @@ import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/g
 import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react';
 import Link from 'next/link';
 
-// URL for your deployed Cloud Function for CREATING payment intents for the creator's connected account
 const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/createPaymentIntent";
-// URL for your deployed Cloud Function for sending notifications
 const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
 
 
@@ -114,7 +112,7 @@ export default function ManageInvoicePage() {
 
       const input: GenerateInvoiceHtmlInput = {
         creatorName: user.displayName || "Your Name/Company",
-        creatorAddress: user.address || "Your Address, City, Country", // Use user's address
+        creatorAddress: user.address || "Your Address, City, Country",
         creatorEmail: user.email || "your@email.com",
         clientName: contract.clientName || contract.brand,
         clientAddress: contract.clientAddress,
@@ -149,11 +147,19 @@ export default function ManageInvoicePage() {
     try {
       const contractDocRef = doc(db, 'contracts', contract.id);
       const newStatus = invoiceStatus === 'none' ? 'draft' : invoiceStatus; 
+      
+      const historyEntry = {
+        timestamp: serverTimestamp(),
+        action: `Invoice Saved (Status: ${newStatus})`,
+        details: `Invoice number: ${invoiceNumber}`,
+      };
+
       await updateDoc(contractDocRef, {
         invoiceHtmlContent: generatedInvoiceHtml,
         invoiceNumber: invoiceNumber,
         invoiceStatus: newStatus,
-        updatedAt: Timestamp.now(),
+        invoiceHistory: arrayUnion(historyEntry),
+        updatedAt: serverTimestamp(),
       });
       setContract(prev => prev ? {...prev, invoiceHtmlContent: generatedInvoiceHtml, invoiceNumber: invoiceNumber, invoiceStatus: newStatus } : null);
       setInvoiceStatus(newStatus);
@@ -172,9 +178,14 @@ export default function ManageInvoicePage() {
     setIsSaving(true); 
     try {
       const contractDocRef = doc(db, 'contracts', contract.id);
+      const historyEntry = {
+        timestamp: serverTimestamp(),
+        action: `Invoice Status Changed to ${newStatus}`,
+      };
       await updateDoc(contractDocRef, {
         invoiceStatus: newStatus,
-        updatedAt: Timestamp.now(),
+        invoiceHistory: arrayUnion(historyEntry),
+        updatedAt: serverTimestamp(),
       });
       setContract(prev => prev ? {...prev, invoiceStatus: newStatus} : null);
       setInvoiceStatus(newStatus);
@@ -232,14 +243,20 @@ export default function ManageInvoicePage() {
       }
 
       const contractDocRef = doc(db, 'contracts', contract.id);
+      const historyEntry = {
+        timestamp: serverTimestamp(),
+        action: 'Invoice Sent to Client',
+        details: `To: ${contract.clientEmail}`,
+      };
       await updateDoc(contractDocRef, {
         invoiceStatus: 'sent',
-        updatedAt: Timestamp.now(),
+        invoiceHistory: arrayUnion(historyEntry),
+        updatedAt: serverTimestamp(),
       });
       setContract(prev => prev ? {...prev, invoiceStatus: 'sent' } : null);
       setInvoiceStatus('sent');
       toast({ title: "Invoice Sent", description: `Invoice ${invoiceNumber} sent to ${contract.clientEmail}.` });
-      console.log(`LOG: Invoice ${invoiceNumber} sent to ${contract.clientEmail} for contract ID: ${contract.id}.`);
+      console.log(`LOG: Invoice ${invoiceNumber} sent to ${contract.clientEmail} for contract ID: ${contract.id}. Your backend 'sendContractNotification' should ideally log this to Firestore history too.`);
 
     } catch (error: any) {
       console.error("Error sending invoice:", error);
@@ -287,7 +304,7 @@ export default function ManageInvoicePage() {
           amount: contract.amount * 100, 
           currency: 'usd', 
           contractId: contract.id,
-          clientEmail: contract.clientEmail || null, // Pass client's email for creator-initiated payment
+          clientEmail: contract.clientEmail || null, 
         }),
       });
 
@@ -317,7 +334,7 @@ export default function ManageInvoicePage() {
   if (isLoadingContract || authLoading) {
     return (
       <div className="space-y-4 p-4">
-        <Skeleton className="h-10 w-1/2" /> <Skeleton className="h-8 w-1/3" />
+        <PageHeader title="Manage Invoice" description="Loading contract details..." />
         <Card><CardContent className="p-6"><Skeleton className="h-64 w-full" /></CardContent></Card>
       </div>
     );

@@ -5,14 +5,14 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Edit3, Trash2, FileText, DollarSign, CalendarDays, Briefcase, Info, CheckCircle, AlertTriangle, Loader2, Lightbulb, FileSpreadsheet } from 'lucide-react';
+import { ArrowLeft, Edit3, Trash2, FileText, DollarSign, CalendarDays, Briefcase, Info, CheckCircle, AlertTriangle, Loader2, Lightbulb, FileSpreadsheet, History } from 'lucide-react';
 import Link from 'next/link';
 import type { Contract } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ContractStatusBadge } from '@/components/contracts/contract-status-badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/hooks/use-auth';
-import { db, doc, getDoc, Timestamp, deleteDoc } from '@/lib/firebase';
+import { db, doc, getDoc, Timestamp, deleteDoc, serverTimestamp, arrayUnion } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import { ref as storageFileRef, deleteObject } from 'firebase/storage';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -29,6 +29,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from '@/components/ui/badge';
+import { format } from 'date-fns';
 
 function DetailItem({ icon: Icon, label, value, valueClassName }: { icon: React.ElementType, label: string, value: React.ReactNode, valueClassName?: string }) {
   return (
@@ -90,13 +91,30 @@ export default function ContractDetailPage() {
             } else if (!updatedAt) {
                 updatedAt = Timestamp.now();
             }
+            
+            let lastReminderSentAt = data.lastReminderSentAt;
+            if (lastReminderSentAt && !(lastReminderSentAt instanceof Timestamp)) {
+              if (typeof lastReminderSentAt === 'string') {
+                lastReminderSentAt = Timestamp.fromDate(new Date(lastReminderSentAt));
+              } else if (lastReminderSentAt.seconds && typeof lastReminderSentAt.seconds === 'number') {
+                lastReminderSentAt = new Timestamp(lastReminderSentAt.seconds, lastReminderSentAt.nanoseconds || 0);
+              } else {
+                lastReminderSentAt = null;
+              }
+            }
+
 
             setContract({
               id: contractSnap.id,
               ...data,
               createdAt: createdAt,
               updatedAt: updatedAt,
+              lastReminderSentAt: lastReminderSentAt || null,
               invoiceStatus: data.invoiceStatus || 'none',
+              invoiceHistory: data.invoiceHistory?.map((entry: any) => ({
+                ...entry,
+                timestamp: entry.timestamp instanceof Timestamp ? entry.timestamp : Timestamp.fromDate(new Date(entry.timestamp.seconds * 1000))
+              })) || [],
             } as Contract);
           } else {
             setContract(null);
@@ -153,6 +171,7 @@ export default function ContractDetailPage() {
   if (authLoading || isLoading) {
     return (
       <div className="space-y-6">
+        <PageHeader title="Loading Contract..." description="Please wait while we fetch the details." />
         <Skeleton className="h-12 w-3/4" />
         <Skeleton className="h-8 w-1/2" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -210,7 +229,7 @@ export default function ContractDetailPage() {
     effectiveDisplayStatus = 'overdue';
   } else if (contract.invoiceStatus === 'sent' || contract.invoiceStatus === 'viewed') {
     effectiveDisplayStatus = 'invoiced';
-  } else if (effectiveDisplayStatus === 'pending' && contractDueDate && contractDueDate < todayMidnight) { // Ensure base status also considers overdue
+  } else if (effectiveDisplayStatus === 'pending' && contractDueDate && contractDueDate < todayMidnight) { 
     effectiveDisplayStatus = 'overdue';
   }
 
@@ -368,6 +387,33 @@ export default function ContractDetailPage() {
                   </div>
                 )}
                 {!hasNegotiationSuggestions && <p className="text-muted-foreground">No negotiation suggestions available for this contract.</p>}
+              </CardContent>
+            </Card>
+          )}
+          
+          {contract.invoiceHistory && contract.invoiceHistory.length > 0 && (
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <History className="h-5 w-5 text-blue-500" />
+                  Invoice History
+                </CardTitle>
+                <CardDescription>A log of actions related to this invoice.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[150px] pr-3">
+                  <ul className="space-y-2">
+                    {contract.invoiceHistory.slice().sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()).map((entry, index) => (
+                      <li key={index} className="text-sm">
+                        <span className="font-medium text-foreground">
+                          {format(entry.timestamp.toDate(), "PPpp")}
+                        </span>
+                        <span className="text-muted-foreground">: {entry.action}</span>
+                        {entry.details && <span className="text-xs text-muted-foreground/80 block pl-2">- {entry.details}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
               </CardContent>
             </Card>
           )}
