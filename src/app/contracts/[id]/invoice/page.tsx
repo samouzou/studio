@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getFunctions, httpsCallableFromURL } from 'firebase/functions'; // Use httpsCallableFromURL
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { StripePaymentForm } from '@/components/payments/stripe-payment-form'; 
@@ -21,8 +21,10 @@ import { generateInvoiceHtml, type GenerateInvoiceHtmlInput } from '@/ai/flows/g
 import { ArrowLeft, FileText, Loader2, Wand2, Save, AlertTriangle, CreditCard, Send } from 'lucide-react';
 import Link from 'next/link';
 
-const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://sendcontractnotification-zq2pbwya7a-uc.a.run.app";
-const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://createpaymentintent-zq2pbwya7a-uc.a.run.app";
+// URL for your deployed Cloud Function for CREATING payment intents for the creator's connected account
+const CREATE_PAYMENT_INTENT_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/createPaymentIntent";
+// URL for your deployed Cloud Function for sending notifications
+const SEND_CONTRACT_NOTIFICATION_FUNCTION_URL = "https://us-central1-sololedger-lite.cloudfunctions.net/sendContractNotification";
 
 
 export default function ManageInvoicePage() {
@@ -39,6 +41,7 @@ export default function ManageInvoicePage() {
   const [invoiceStatus, setInvoiceStatus] = useState<Contract['invoiceStatus']>('none');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   
   const [isFetchingClientSecret, setIsFetchingClientSecret] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -111,7 +114,7 @@ export default function ManageInvoicePage() {
 
       const input: GenerateInvoiceHtmlInput = {
         creatorName: user.displayName || "Your Name/Company",
-        creatorAddress: "Your Address, City, Country", 
+        creatorAddress: user.address || "Your Address, City, Country", // Use user's address
         creatorEmail: user.email || "your@email.com",
         clientName: contract.clientName || contract.brand,
         clientAddress: contract.clientAddress,
@@ -245,7 +248,6 @@ export default function ManageInvoicePage() {
       setIsSending(false);
     }
   };
-  const [isSending, setIsSending] = useState(false);
 
 
   const handleInitiatePayment = async () => {
@@ -285,7 +287,7 @@ export default function ManageInvoicePage() {
           amount: contract.amount * 100, 
           currency: 'usd', 
           contractId: contract.id,
-          clientEmail: contract.clientEmail || null, // Pass client's email
+          clientEmail: contract.clientEmail || null, // Pass client's email for creator-initiated payment
         }),
       });
 
@@ -424,11 +426,6 @@ export default function ManageInvoicePage() {
                 </Button>
               )}
             </div>
-             {/* <p className="text-xs text-muted-foreground">
-                The "Pay Now" link for client emails will use: {payUrl || "generating..."}
-                <br />
-                For direct payment via "Pay Invoice": ensure your backend `createPaymentIntent` function at {CREATE_PAYMENT_INTENT_FUNCTION_URL} passes relevant metadata.
-             </p> */}
           </CardContent>
         </Card>
 
@@ -476,6 +473,3 @@ export default function ManageInvoicePage() {
     </>
   );
 }
-
-
-    

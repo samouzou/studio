@@ -6,12 +6,12 @@ import { useAuth, type UserProfile } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea"; // Import Textarea
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, UploadCloud } from "lucide-react";
+import { Loader2, Save } from "lucide-react";
 import { auth, db, doc, updateDoc, storage } from "@/lib/firebase";
 import { updateProfile as updateFirebaseUserProfile } from "firebase/auth";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import Image from 'next/image';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface UpdateProfileFormProps {
@@ -20,6 +20,7 @@ interface UpdateProfileFormProps {
 
 export function UpdateProfileForm({ currentUser }: UpdateProfileFormProps) {
   const [displayName, setDisplayName] = useState(currentUser.displayName || "");
+  const [address, setAddress] = useState(currentUser.address || ""); // Add address state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(currentUser.avatarUrl);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -27,8 +28,8 @@ export function UpdateProfileForm({ currentUser }: UpdateProfileFormProps) {
   const { refreshAuthUser } = useAuth();
 
   useEffect(() => {
-    // Update local state if currentUser prop changes (e.g., after context refresh)
     setDisplayName(currentUser.displayName || "");
+    setAddress(currentUser.address || ""); // Update address from currentUser
     setImagePreview(currentUser.avatarUrl);
   }, [currentUser]);
 
@@ -43,7 +44,7 @@ export function UpdateProfileForm({ currentUser }: UpdateProfileFormProps) {
       reader.readAsDataURL(file);
     } else {
       setSelectedFile(null);
-      setImagePreview(currentUser.avatarUrl); // Revert to current avatar if no file selected
+      setImagePreview(currentUser.avatarUrl);
     }
   };
 
@@ -53,25 +54,23 @@ export function UpdateProfileForm({ currentUser }: UpdateProfileFormProps) {
       toast({ title: "Error", description: "No authenticated user found.", variant: "destructive" });
       return;
     }
-    if (!displayName.trim() && !selectedFile) {
-      toast({ title: "No Changes", description: "Please enter a display name or select an image.", variant: "default" });
+    if (!displayName.trim() && !selectedFile && address.trim() === (currentUser.address || "")) {
+      toast({ title: "No Changes", description: "Please make changes to save.", variant: "default" });
       return;
     }
 
     setIsUpdating(true);
-    let newAvatarUrl: string | null = currentUser.avatarUrl; // Keep current avatar unless a new one is uploaded
+    let newAvatarUrl: string | null = currentUser.avatarUrl;
 
     try {
-      // 1. Handle Avatar Upload if a new file is selected
       if (selectedFile) {
         const avatarStorageRef = storageRef(storage, `avatars/${currentUser.uid}/${selectedFile.name}`);
         const uploadResult = await uploadBytes(avatarStorageRef, selectedFile);
         newAvatarUrl = await getDownloadURL(uploadResult.ref);
       }
 
-      // 2. Prepare updates for Firebase Auth and Firestore
       const authUpdates: { displayName?: string; photoURL?: string | null } = {};
-      const firestoreUpdates: { displayName?: string; avatarUrl?: string | null } = {};
+      const firestoreUpdates: { displayName?: string; avatarUrl?: string | null; address?: string } = {};
       let hasChanges = false;
 
       if (displayName.trim() && displayName.trim() !== currentUser.displayName) {
@@ -79,10 +78,13 @@ export function UpdateProfileForm({ currentUser }: UpdateProfileFormProps) {
         firestoreUpdates.displayName = displayName.trim();
         hasChanges = true;
       }
-
       if (newAvatarUrl && newAvatarUrl !== currentUser.avatarUrl) {
         authUpdates.photoURL = newAvatarUrl;
         firestoreUpdates.avatarUrl = newAvatarUrl;
+        hasChanges = true;
+      }
+      if (address.trim() !== (currentUser.address || "")) {
+        firestoreUpdates.address = address.trim();
         hasChanges = true;
       }
       
@@ -92,20 +94,18 @@ export function UpdateProfileForm({ currentUser }: UpdateProfileFormProps) {
         return;
       }
 
-      // 3. Update Firebase Auth profile (if there are changes)
       if (Object.keys(authUpdates).length > 0) {
         await updateFirebaseUserProfile(auth.currentUser, authUpdates);
       }
 
-      // 4. Update Firestore user document (if there are changes)
       if (Object.keys(firestoreUpdates).length > 0) {
         const userDocRef = doc(db, "users", currentUser.uid);
         await updateDoc(userDocRef, firestoreUpdates);
       }
       
       toast({ title: "Success", description: "Profile updated successfully." });
-      await refreshAuthUser(); // Refresh context to show updated info everywhere
-      setSelectedFile(null); // Clear selected file after successful upload
+      await refreshAuthUser();
+      setSelectedFile(null);
 
     } catch (error: any) {
       console.error("Error updating profile:", error);
@@ -151,9 +151,23 @@ export function UpdateProfileForm({ currentUser }: UpdateProfileFormProps) {
           className="mt-1"
         />
       </div>
+
+      <div>
+        <Label htmlFor="address">Address (for Invoices)</Label>
+        <Textarea
+          id="address"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder="123 Main St, City, State, Zip Code, Country"
+          className="mt-1"
+          rows={3}
+        />
+        <p className="text-xs text-muted-foreground mt-1">This address will be used as the 'From' address on your invoices.</p>
+      </div>
+
       <Button 
         type="submit" 
-        disabled={isUpdating || (displayName === (currentUser.displayName || "") && !selectedFile)}
+        disabled={isUpdating || (displayName === (currentUser.displayName || "") && !selectedFile && address === (currentUser.address || ""))}
       >
         {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
         Save Changes
