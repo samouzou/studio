@@ -13,14 +13,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
-import type { Contract } from '@/types';
-import { ArrowLeft, Save, Loader2, AlertTriangle, Wand2 } from 'lucide-react';
+import { db, doc, getDoc, updateDoc, Timestamp, storage, ref as storageFileRefOriginal, uploadBytes, getDownloadURL, deleteObject as deleteStorageObject } from '@/lib/firebase';
+import type { Contract, ExtractedTerms, NegotiationSuggestionsOutput } from '@/types';
+import { ArrowLeft, Save, Loader2, AlertTriangle, Wand2, UploadCloud, File as FileIcon } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-import { extractContractDetails, type ExtractContractDetailsOutput } from "@/ai/flows/extract-contract-details";
-import { summarizeContractTerms, type SummarizeContractTermsOutput } from "@/ai/flows/summarize-contract-terms";
-import { getNegotiationSuggestions, type NegotiationSuggestionsOutput } from "@/ai/flows/negotiation-suggestions-flow";
+import { extractContractDetails, type ExtractContractDetailsOutput as AIExtractOutput } from "@/ai/flows/extract-contract-details";
+import { summarizeContractTerms, type SummarizeContractTermsOutput as AISummaryOutput } from "@/ai/flows/summarize-contract-terms";
+import { getNegotiationSuggestions, type NegotiationSuggestionsOutput as AINegotiationOutput } from "@/ai/flows/negotiation-suggestions-flow";
 
 export default function EditContractPage() {
   const params = useParams();
@@ -49,8 +49,12 @@ export default function EditContractPage() {
   const [editedContractText, setEditedContractText] = useState('');
   const [hasContractTextChanged, setHasContractTextChanged] = useState(false);
   const [currentSummary, setCurrentSummary] = useState<string | undefined>(undefined);
-  const [currentExtractedTerms, setCurrentExtractedTerms] = useState<Contract['extractedTerms'] | undefined>(undefined);
-  const [currentNegotiationSuggestions, setCurrentNegotiationSuggestions] = useState<Contract['negotiationSuggestions'] | undefined>(undefined);
+  const [currentExtractedTerms, setCurrentExtractedTerms] = useState<ExtractedTerms | null | undefined>(undefined);
+  const [currentNegotiationSuggestions, setCurrentNegotiationSuggestions] = useState<NegotiationSuggestionsOutput | null | undefined>(undefined);
+
+  // State for new file upload
+  const [newSelectedFile, setNewSelectedFile] = useState<File | null>(null);
+  const [currentFileName, setCurrentFileName] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -78,6 +82,7 @@ export default function EditContractPage() {
             setCurrentSummary(data.summary);
             setCurrentExtractedTerms(data.extractedTerms);
             setCurrentNegotiationSuggestions(data.negotiationSuggestions);
+            setCurrentFileName(data.fileName || null);
             setHasContractTextChanged(false);
 
           } else {
@@ -118,16 +123,14 @@ export default function EditContractPage() {
       // Update form fields with AI extracted details
       setBrand(details.brand || '');
       setAmount(details.amount || 0);
-      // Ensure dueDate is in YYYY-MM-DD format for the input type="date"
-      const aiDueDate = details.dueDate ? new Date(details.dueDate).toISOString().split('T')[0] : '';
+      const aiDueDate = details.dueDate ? new Date(details.dueDate + 'T00:00:00Z').toISOString().split('T')[0] : ''; // Ensure UTC for date input
       setDueDate(aiDueDate);
       
-      // Update AI derived data states
       setCurrentSummary(summaryOutput.summary);
-      setCurrentExtractedTerms(details.extractedTerms ? JSON.parse(JSON.stringify(details.extractedTerms)) : undefined);
-      setCurrentNegotiationSuggestions(suggestions ? JSON.parse(JSON.stringify(suggestions)) : undefined);
+      setCurrentExtractedTerms(details.extractedTerms ? JSON.parse(JSON.stringify(details.extractedTerms)) : null);
+      setCurrentNegotiationSuggestions(suggestions ? JSON.parse(JSON.stringify(suggestions)) : null);
       
-      setHasContractTextChanged(false); // AI has processed the current text
+      setHasContractTextChanged(false); 
       toast({ title: "AI Re-processing Complete", description: "Contract details, summary, and suggestions updated." });
     } catch (error) {
       console.error("Error re-parsing with AI:", error);
@@ -154,7 +157,31 @@ export default function EditContractPage() {
 
     try {
       const contractDocRef = doc(db, 'contracts', id);
-      const updates: Partial<Contract> & { updatedAt: Timestamp } = {
+      let newFileUrl: string | null = contract.fileUrl;
+      let newFileNameToSave: string | null = contract.fileName;
+
+      if (newSelectedFile) {
+        // Attempt to delete old file if it exists
+        if (contract.fileUrl) {
+          try {
+            const oldFileStorageRef = storageFileRefOriginal(storage, contract.fileUrl);
+            await deleteStorageObject(oldFileStorageRef);
+            toast({ title: "Old File Removed", description: "Previous contract file deleted from storage." });
+          } catch (deleteError: any) {
+            // Log error but don't block update if deletion fails (e.g., file already gone, or permissions)
+            console.warn("Could not delete old file from storage:", deleteError.message);
+            toast({ title: "Warning", description: "Could not delete old file. It might have been already removed.", variant: "default" });
+          }
+        }
+        // Upload new file
+        const fileStorageRef = storageFileRefOriginal(storage, `contracts/${user.uid}/${Date.now()}_${newSelectedFile.name}`);
+        const uploadResult = await uploadBytes(fileStorageRef, newSelectedFile);
+        newFileUrl = await getDownloadURL(uploadResult.ref);
+        newFileNameToSave = newSelectedFile.name;
+        toast({ title: "New File Uploaded", description: "New contract file saved to storage." });
+      }
+      
+      const updates: Partial<Contract> = {
         brand: brand.trim(),
         projectName: projectName.trim() || null,
         amount: contractAmount,
@@ -167,22 +194,21 @@ export default function EditContractPage() {
         
         contractText: editedContractText.trim() || null,
         summary: currentSummary || null,
-        extractedTerms: currentExtractedTerms || null,
-        negotiationSuggestions: currentNegotiationSuggestions || null,
+        // Ensure plain objects for Firestore
+        extractedTerms: currentExtractedTerms ? JSON.parse(JSON.stringify(currentExtractedTerms)) : null,
+        negotiationSuggestions: currentNegotiationSuggestions ? JSON.parse(JSON.stringify(currentNegotiationSuggestions)) : null,
         
+        fileUrl: newFileUrl,
+        fileName: newFileNameToSave,
         updatedAt: Timestamp.now(),
       };
 
-      const finalUpdates: Record<string, any> = {};
+      const finalUpdates: { [key: string]: any } = {};
       for (const key in updates) {
-        if ((updates as Record<string, any>)[key] !== null) {
+        if ((updates as Record<string, any>)[key] !== undefined) { // Save nulls, but not undefined
           finalUpdates[key] = (updates as Record<string, any>)[key];
-        } else {
-           finalUpdates[key] = null;
         }
       }
-      finalUpdates.updatedAt = Timestamp.now();
-
 
       await updateDoc(contractDocRef, finalUpdates);
       toast({ title: "Contract Updated", description: "Changes saved successfully." });
@@ -215,6 +241,19 @@ export default function EditContractPage() {
       </div>
     );
   }
+  
+  const hasAnyChanges = brand.trim() !== (contract.brand || '') ||
+                       projectName.trim() !== (contract.projectName || '') ||
+                       parseFloat(amount as string) !== contract.amount ||
+                       dueDate !== contract.dueDate ||
+                       contractType !== contract.contractType ||
+                       clientName.trim() !== (contract.clientName || '') ||
+                       clientEmail.trim() !== (contract.clientEmail || '') ||
+                       clientAddress.trim() !== (contract.clientAddress || '') ||
+                       paymentInstructions.trim() !== (contract.paymentInstructions || '') ||
+                       editedContractText.trim() !== (contract.contractText || '') ||
+                       !!newSelectedFile;
+
 
   return (
     <>
@@ -299,6 +338,34 @@ export default function EditContractPage() {
 
         <Card className="mt-6">
           <CardHeader>
+            <CardTitle>Contract File</CardTitle>
+            <CardDescription>Replace the existing contract file if needed.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {currentFileName && !newSelectedFile && (
+              <div className="text-sm text-muted-foreground flex items-center">
+                <FileIcon className="mr-2 h-4 w-4" /> Current file: {currentFileName}
+              </div>
+            )}
+            {newSelectedFile && (
+              <div className="text-sm text-green-600 flex items-center">
+                <UploadCloud className="mr-2 h-4 w-4" /> New file selected: {newSelectedFile.name}
+              </div>
+            )}
+            <div>
+              <Label htmlFor="newContractFile">Upload New File (Optional - will replace existing)</Label>
+              <Input
+                id="newContractFile"
+                type="file"
+                className="mt-1"
+                onChange={(e) => setNewSelectedFile(e.target.files ? e.target.files[0] : null)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mt-6">
+          <CardHeader>
             <CardTitle>Contract Text & AI Analysis</CardTitle>
             <CardDescription>Edit the contract text and re-process with AI if needed. Changes to text or AI results will be saved.</CardDescription>
           </CardHeader>
@@ -324,12 +391,44 @@ export default function EditContractPage() {
               Re-process Text with AI
             </Button>
             {currentSummary && (
-              <div>
+              <div className="mt-2">
                 <Label className="font-semibold">Current AI Summary:</Label>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap p-2 border rounded-md mt-1">{currentSummary}</p>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap p-2 border rounded-md mt-1 bg-muted/50">{currentSummary}</p>
               </div>
             )}
-             {/* Can add similar displays for currentExtractedTerms and currentNegotiationSuggestions if needed */}
+            {currentExtractedTerms && Object.keys(currentExtractedTerms).length > 0 && (
+              <div className="mt-4">
+                <Label className="font-semibold">Current AI Extracted Terms:</Label>
+                <div className="text-sm text-muted-foreground p-2 border rounded-md mt-1 space-y-1 bg-muted/50">
+                  {currentExtractedTerms.paymentMethod && <p><strong>Payment Method:</strong> {currentExtractedTerms.paymentMethod}</p>}
+                  {currentExtractedTerms.deliverables && currentExtractedTerms.deliverables.length > 0 && (
+                    <p><strong>Deliverables:</strong> {currentExtractedTerms.deliverables.join(', ')}</p>
+                  )}
+                  {currentExtractedTerms.usageRights && <p><strong>Usage Rights:</strong> {currentExtractedTerms.usageRights}</p>}
+                  {currentExtractedTerms.terminationClauses && <p><strong>Termination:</strong> {currentExtractedTerms.terminationClauses}</p>}
+                  {currentExtractedTerms.lateFeePenalty && <p><strong>Late Fee/Penalty:</strong> {currentExtractedTerms.lateFeePenalty}</p>}
+                </div>
+              </div>
+            )}
+            {currentNegotiationSuggestions && 
+             (currentNegotiationSuggestions.paymentTerms || currentNegotiationSuggestions.exclusivity || currentNegotiationSuggestions.ipRights || (currentNegotiationSuggestions.generalSuggestions && currentNegotiationSuggestions.generalSuggestions.length > 0)) && (
+              <div className="mt-4">
+                <Label className="font-semibold">Current AI Negotiation Suggestions:</Label>
+                <div className="text-sm text-muted-foreground p-2 border rounded-md mt-1 space-y-1 bg-muted/50">
+                  {currentNegotiationSuggestions.paymentTerms && <p><strong>Payment Terms Advice:</strong> {currentNegotiationSuggestions.paymentTerms}</p>}
+                  {currentNegotiationSuggestions.exclusivity && <p><strong>Exclusivity Advice:</strong> {currentNegotiationSuggestions.exclusivity}</p>}
+                  {currentNegotiationSuggestions.ipRights && <p><strong>IP Rights Advice:</strong> {currentNegotiationSuggestions.ipRights}</p>}
+                  {currentNegotiationSuggestions.generalSuggestions && currentNegotiationSuggestions.generalSuggestions.length > 0 && (
+                    <div>
+                      <strong>General Suggestions:</strong>
+                      <ul className="list-disc list-inside ml-4">
+                        {currentNegotiationSuggestions.generalSuggestions.map((item, i) => <li key={i}>{item}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -338,7 +437,7 @@ export default function EditContractPage() {
           <Button type="button" variant="outline" onClick={() => router.push(`/contracts/${id}`)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isSaving || isReparsingAi}>
+          <Button type="submit" disabled={isSaving || isReparsingAi || !hasAnyChanges}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Changes
           </Button>
@@ -347,4 +446,3 @@ export default function EditContractPage() {
     </>
   );
 }
-
