@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
 import type { Contract } from '@/types';
 import { ArrowLeft, Save, Loader2, AlertTriangle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function EditContractPage() {
   const params = useParams();
@@ -37,6 +38,7 @@ export default function EditContractPage() {
   const [clientEmail, setClientEmail] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [paymentInstructions, setPaymentInstructions] = useState('');
+  const [contractType, setContractType] = useState<Contract['contractType']>('other');
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -57,6 +59,7 @@ export default function EditContractPage() {
             setClientEmail(data.clientEmail || '');
             setClientAddress(data.clientAddress || '');
             setPaymentInstructions(data.paymentInstructions || '');
+            setContractType(data.contractType || 'other');
           } else {
             toast({ title: "Error", description: "Contract not found or access denied.", variant: "destructive" });
             router.push('/contracts');
@@ -91,11 +94,12 @@ export default function EditContractPage() {
 
     try {
       const contractDocRef = doc(db, 'contracts', id);
-      const updates: Partial<Contract> = {
+      const updates: Partial<Contract> & { updatedAt: Timestamp } = {
         brand: brand.trim(),
         projectName: projectName.trim() || null, // Use null if empty to remove field
         amount: contractAmount,
         dueDate: dueDate,
+        contractType: contractType,
         clientName: clientName.trim() || null,
         clientEmail: clientEmail.trim() || null,
         clientAddress: clientAddress.trim() || null,
@@ -104,7 +108,17 @@ export default function EditContractPage() {
       };
 
       // Filter out null values to effectively remove fields if they are emptied
-      const finalUpdates = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== null));
+      const finalUpdates: Record<string, any> = {};
+      for (const key in updates) {
+        if ((updates as Record<string, any>)[key] !== null) {
+          finalUpdates[key] = (updates as Record<string, any>)[key];
+        } else {
+           // For fields explicitly set to null (like projectName), ensure they are included for removal
+           finalUpdates[key] = null;
+        }
+      }
+      // Ensure updatedAt is always included
+      finalUpdates.updatedAt = Timestamp.now();
 
 
       await updateDoc(contractDocRef, finalUpdates);
@@ -173,6 +187,21 @@ export default function EditContractPage() {
               <div>
                 <Label htmlFor="dueDate">Due Date</Label>
                 <Input id="dueDate" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required className="mt-1" />
+              </div>
+              <div>
+                <Label htmlFor="contractType">Contract Type</Label>
+                <Select value={contractType} onValueChange={(value) => setContractType(value as Contract['contractType'])}>
+                  <SelectTrigger className="w-full mt-1">
+                    <SelectValue placeholder="Select contract type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sponsorship">Sponsorship</SelectItem>
+                    <SelectItem value="consulting">Consulting</SelectItem>
+                    <SelectItem value="affiliate">Affiliate</SelectItem>
+                    <SelectItem value="retainer">Retainer</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardContent>
