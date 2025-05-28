@@ -83,11 +83,15 @@ export function ContractList({ contracts }: ContractListProps) {
                         <Eye className="mr-2 h-4 w-4" /> View Details
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled>
-                      <Edit3 className="mr-2 h-4 w-4" /> Edit
+                    <DropdownMenuItem asChild>
+                      <Link href={`/contracts/${contract.id}/edit`}>
+                        <Edit3 className="mr-2 h-4 w-4" /> Edit
+                      </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive focus:text-destructive focus:bg-destructive/10" disabled>
-                      <Trash2 className="mr-2 h-4 w-4" /> Delete
+                    <DropdownMenuItem asChild className="text-destructive focus:text-destructive focus:bg-destructive/10">
+                      <Link href={`/contracts/${contract.id}`}>
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete (from details page)
+                      </Link>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
