@@ -316,6 +316,11 @@ export const handlePaymentSuccess = onRequest(async (request, response) => {
       await db.collection("contracts").doc(contractId).update({
         invoiceStatus: "paid",
         updatedAt: new Date(),
+        invoiceHistory: admin.firestore.FieldValue.arrayUnion({
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          action: "Invoice Paid",
+          details: `PaymentIntent ID: ${paymentIntent.id}`,
+        }),
       });
 
       // Get customer email from Stripe

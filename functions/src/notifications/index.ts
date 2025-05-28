@@ -83,6 +83,20 @@ export const sendContractNotification = onRequest(async (request, response) => {
       status: "sent",
     });
 
+    // Add invoice history entry if this is an invoice email
+    if (subject.toLowerCase().includes("invoice")) {
+      const contractId = request.body.contractId;
+      if (contractId) {
+        await db.collection("contracts").doc(contractId).update({
+          invoiceHistory: admin.firestore.FieldValue.arrayUnion({
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            action: "Invoice Sent to Client",
+            details: `To: ${to}`,
+          }),
+        });
+      }
+    }
+
     response.json({status: "success"});
   } catch (error) {
     logger.error("Error sending email:", error);
