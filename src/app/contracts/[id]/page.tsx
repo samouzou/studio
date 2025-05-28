@@ -210,7 +210,7 @@ export default function ContractDetailPage() {
     effectiveDisplayStatus = 'overdue';
   } else if (contract.invoiceStatus === 'sent' || contract.invoiceStatus === 'viewed') {
     effectiveDisplayStatus = 'invoiced';
-  } else if (effectiveDisplayStatus === 'pending' && contractDueDate && contractDueDate < todayMidnight) {
+  } else if (effectiveDisplayStatus === 'pending' && contractDueDate && contractDueDate < todayMidnight) { // Ensure base status also considers overdue
     effectiveDisplayStatus = 'overdue';
   }
 
@@ -228,11 +228,15 @@ export default function ContractDetailPage() {
               </Link>
             </Button>
             <Button variant="secondary" asChild>
-              <Link href={`/contracts/${contract.id}/invoice`}>
+               <Link href={`/contracts/${contract.id}/invoice`}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" /> Manage Invoice
               </Link>
             </Button>
-            <Button variant="outline" disabled><Edit3 className="mr-2 h-4 w-4" /> Edit</Button>
+            <Button variant="outline" asChild>
+              <Link href={`/contracts/${contract.id}/edit`}>
+                <Edit3 className="mr-2 h-4 w-4" /> Edit
+              </Link>
+            </Button>
             <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" disabled={isDeleting}>
@@ -404,6 +408,4 @@ export default function ContractDetailPage() {
     </>
   );
 }
-    
-
     
