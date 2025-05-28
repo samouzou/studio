@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
-import { GoogleAuthProvider } from 'firebase/auth'; // Import class directly
+import { GoogleAuthProvider } from 'firebase/auth'; 
 import {
   auth,
   signInWithPopup,
@@ -12,6 +12,7 @@ import {
   createUserWithEmailAndPassword as firebaseCreateUserWithEmailAndPassword,
   signInWithEmailAndPassword as firebaseSignInWithEmailAndPassword,
   sendPasswordResetEmail as firebaseSendPasswordResetEmail,
+  sendEmailVerification, // Import sendEmailVerification
   updateProfile as firebaseUpdateProfile,
   type FirebaseUser,
   db,
@@ -19,10 +20,6 @@ import {
   setDoc,
   getDoc,
   Timestamp,
-  // storage, // No direct use here, imported by components needing it
-  // ref as storageRef,
-  // uploadBytes,
-  // getDownloadURL
 } from '@/lib/firebase';
 import { useToast } from "@/hooks/use-toast";
 
@@ -32,7 +29,8 @@ export interface UserProfile {
   email: string | null;
   displayName: string | null;
   avatarUrl: string | null;
-  createdAt?: Timestamp; // Added for clarity, was implicitly there
+  emailVerified: boolean; // Added
+  createdAt?: Timestamp; 
 
   // Subscription Fields
   stripeCustomerId?: string | null;
@@ -57,6 +55,7 @@ interface AuthContextType {
   loginWithEmailAndPassword: (email: string, password: string) => Promise<string | null>;
   signupWithEmailAndPassword: (email: string, password: string) => Promise<string | null>;
   sendPasswordReset: (email: string) => Promise<void>;
+  resendVerificationEmail: () => Promise<string | null>; // Added
   isLoading: boolean;
   getUserIdToken: () => Promise<string | null>;
   refreshAuthUser: () => Promise<void>;
@@ -73,7 +72,7 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
   let needsUpdate = false;
 
   if (!userDocSnap.exists()) {
-    const { uid, email, displayName, photoURL } = firebaseUser;
+    const { uid, email, displayName, photoURL, emailVerified } = firebaseUser;
     const createdAt = Timestamp.now();
     const trialEndsAtTimestamp = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
 
@@ -81,9 +80,9 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
     updates.email = email;
     updates.displayName = displayName || email?.split('@')[0] || 'User';
     updates.avatarUrl = photoURL || null;
+    updates.emailVerified = emailVerified; 
     updates.createdAt = createdAt;
 
-    // Subscription defaults
     updates.stripeCustomerId = null;
     updates.stripeSubscriptionId = null;
     updates.subscriptionStatus = 'trialing';
@@ -91,7 +90,6 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
     updates.subscriptionEndsAt = null;
     updates.trialExtensionUsed = false;
 
-    // Stripe Connect defaults
     updates.stripeAccountId = null;
     updates.stripeAccountStatus = 'none';
     updates.stripeChargesEnabled = false;
@@ -116,26 +114,36 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
       updates.displayName = firebaseUser.displayName;
       needsUpdate = true;
     }
-
-    // Ensure subscription fields have defaults if missing (for older users)
+    if (existingData.emailVerified !== firebaseUser.emailVerified) {
+      updates.emailVerified = firebaseUser.emailVerified;
+      needsUpdate = true;
+    }
+    
     if (existingData.stripeCustomerId === undefined) { updates.stripeCustomerId = null; needsUpdate = true; }
     if (existingData.stripeSubscriptionId === undefined) { updates.stripeSubscriptionId = null; needsUpdate = true; }
-    if (existingData.subscriptionStatus === undefined) { updates.subscriptionStatus = 'none'; needsUpdate = true; }
-    if (existingData.trialEndsAt === undefined && (existingData.subscriptionStatus === 'none' || existingData.subscriptionStatus === 'trialing' || !existingData.subscriptionStatus)) {
+    
+    let currentSubscriptionStatus = existingData.subscriptionStatus;
+    if (currentSubscriptionStatus === undefined) { 
+      currentSubscriptionStatus = 'none'; 
+      needsUpdate = true; 
+    }
+    updates.subscriptionStatus = currentSubscriptionStatus; // Start with current
+
+    if (existingData.trialEndsAt === undefined && (currentSubscriptionStatus === 'none' || currentSubscriptionStatus === 'trialing')) {
       const createdAt = existingData.createdAt || Timestamp.now();
       updates.trialEndsAt = new Timestamp(createdAt.seconds + 7 * 24 * 60 * 60, createdAt.nanoseconds);
-      if (existingData.subscriptionStatus === 'none' || !existingData.subscriptionStatus) {
+      if (currentSubscriptionStatus === 'none') {
          updates.subscriptionStatus = 'trialing';
       }
       needsUpdate = true;
-    } else if (existingData.trialEndsAt && existingData.trialEndsAt.toMillis() < Date.now() && existingData.subscriptionStatus === 'trialing') {
-      updates.subscriptionStatus = 'none';
+    } else if (existingData.trialEndsAt && existingData.trialEndsAt.toMillis() < Date.now() && currentSubscriptionStatus === 'trialing') {
+      updates.subscriptionStatus = 'none'; // Trial expired, set to none if not active
       needsUpdate = true;
     }
+
     if (existingData.subscriptionEndsAt === undefined) { updates.subscriptionEndsAt = null; needsUpdate = true; }
     if (existingData.trialExtensionUsed === undefined) { updates.trialExtensionUsed = false; needsUpdate = true; }
 
-    // Ensure Stripe Connect fields have defaults if missing
     if (existingData.stripeAccountId === undefined) { updates.stripeAccountId = null; needsUpdate = true; }
     if (existingData.stripeAccountStatus === undefined) { updates.stripeAccountStatus = 'none'; needsUpdate = true; }
     if (existingData.stripeChargesEnabled === undefined) { updates.stripeChargesEnabled = false; needsUpdate = true; }
@@ -162,8 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchAndSetUser = useCallback(async (currentFirebaseUser: FirebaseUser | null) => {
     if (currentFirebaseUser) {
-      setFirebaseUserInstance(currentFirebaseUser);
-      await createUserDocument(currentFirebaseUser);
+      setFirebaseUserInstance(currentFirebaseUser); 
+      await createUserDocument(currentFirebaseUser); 
 
       const userDocRef = doc(db, 'users', currentFirebaseUser.uid);
       const userDocSnap = await getDoc(userDocRef);
@@ -175,15 +183,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: currentFirebaseUser.email,
           displayName: firestoreUserData.displayName || currentFirebaseUser.displayName,
           avatarUrl: firestoreUserData.avatarUrl || currentFirebaseUser.photoURL,
+          emailVerified: currentFirebaseUser.emailVerified, 
           createdAt: firestoreUserData.createdAt,
-          // Subscription
           stripeCustomerId: firestoreUserData.stripeCustomerId,
           stripeSubscriptionId: firestoreUserData.stripeSubscriptionId,
           subscriptionStatus: firestoreUserData.subscriptionStatus,
           trialEndsAt: firestoreUserData.trialEndsAt,
           subscriptionEndsAt: firestoreUserData.subscriptionEndsAt,
           trialExtensionUsed: firestoreUserData.trialExtensionUsed,
-          // Stripe Connect
           stripeAccountId: firestoreUserData.stripeAccountId,
           stripeAccountStatus: firestoreUserData.stripeAccountStatus,
           stripeChargesEnabled: firestoreUserData.stripeChargesEnabled,
@@ -196,7 +203,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: currentFirebaseUser.email,
           displayName: currentFirebaseUser.displayName,
           avatarUrl: currentFirebaseUser.photoURL,
-          createdAt: Timestamp.now(),
+          emailVerified: currentFirebaseUser.emailVerified,
+          createdAt: Timestamp.now(), // Fallback
           subscriptionStatus: 'none',
           stripeAccountStatus: 'none',
         });
@@ -219,8 +227,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshAuthUser = useCallback(async () => {
     const currentFbUser = auth.currentUser;
     if (currentFbUser) {
-      setIsLoading(true); // Indicate loading during refresh
-      await fetchAndSetUser(currentFbUser);
+      setIsLoading(true); 
+      await currentFbUser.reload(); 
+      const refreshedFirebaseUser = auth.currentUser; 
+      if (refreshedFirebaseUser) {
+        await fetchAndSetUser(refreshedFirebaseUser); 
+      } else {
+         setIsLoading(false);
+      }
     }
   }, [fetchAndSetUser]);
 
@@ -230,22 +244,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
+      // onAuthStateChanged will handle setting user
     } catch (error: any) {
       console.error("Error signing in with Google:", error);
       toast({ title: "Login Failed", description: error.message || "Could not sign in with Google.", variant: "destructive"});
-      setUser(null);
+      setUser(null); 
       setIsLoading(false);
     }
+    // setIsLoading(false) is handled by onAuthStateChanged -> fetchAndSetUser
   };
 
   const logout = async () => {
     try {
       setIsLoading(true);
       await signOut(auth);
-    } catch (error: any) {
-      console.error("Error signing out:", error);
+    } catch (error: any) {      console.error("Error signing out:", error);
       toast({ title: "Logout Failed", description: error.message, variant: "destructive"});
-      setIsLoading(false);
+    } finally {
+      setIsLoading(false); 
     }
   };
 
@@ -253,11 +269,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       await firebaseSignInWithEmailAndPassword(auth, email, password);
-      return null;
+      // onAuthStateChanged will handle setting user and clearing loading state
+      // For explicit feedback, we can set isLoading(false) here but onAuthStateChanged is preferred for consistency
+      // For now, we rely on onAuthStateChanged to set isLoading(false) after fetchAndSetUser
+      return null; // Success
     } catch (error: any) {
       console.error("Error signing in with email and password:", error);
-      setUser(null);
-      setIsLoading(false);
+      setUser(null); // Explicitly set user to null on error
+      setIsLoading(false); // Ensure loading is false on error
       switch (error.code) {
         case 'auth/user-not-found':
         case 'auth/wrong-password':
@@ -274,12 +293,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signupWithEmailAndPassword = async (email: string, password: string): Promise<string | null> => {
     setIsLoading(true);
     try {
-      await firebaseCreateUserWithEmailAndPassword(auth, email, password);
-      return null;
+      const userCredential = await firebaseCreateUserWithEmailAndPassword(auth, email, password);
+      if (userCredential.user) {
+        await sendEmailVerification(userCredential.user);
+        toast({
+          title: "Verification Email Sent",
+          description: "Please check your inbox to verify your email address.",
+          duration: 7000,
+        });
+      }
+      // onAuthStateChanged will handle setting user and clearing loading state,
+      // including creating the Firestore document via fetchAndSetUser
+      return null; // Success
     } catch (error: any) {
       console.error("Error signing up with email and password:", error);
-      setUser(null);
-      setIsLoading(false);
+      setUser(null); // Explicitly set user to null on error
+      setIsLoading(false); // Ensure loading is false on error
       switch (error.code) {
         case 'auth/email-already-in-use':
           return 'This email address is already in use.';
@@ -312,12 +341,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   };
+  
+  const resendVerificationEmail = async (): Promise<string | null> => {
+    if (firebaseUserInstance && !firebaseUserInstance.emailVerified) {
+      setIsLoading(true);
+      try {
+        await sendEmailVerification(firebaseUserInstance);
+        toast({
+          title: "Verification Email Resent",
+          description: "Please check your inbox.",
+        });
+        return null;
+      } catch (error: any) {
+        console.error("Error resending verification email:", error);
+        toast({
+          title: "Error Resending Email",
+          description: error.message || "Could not resend verification email.",
+          variant: "destructive",
+        });
+        return error.message || "Could not resend verification email.";
+      } finally {
+        setIsLoading(false);
+      }
+    } else if (firebaseUserInstance && firebaseUserInstance.emailVerified) {
+      toast({
+        title: "Email Already Verified",
+        description: "Your email address is already verified.",
+      });
+      return null;
+    }
+    return "No user to send verification email to, or email already verified.";
+  };
 
 
   const getUserIdToken = async (): Promise<string | null> => {
     if (firebaseUserInstance) {
       try {
-        return await firebaseUserInstance.getIdToken(true);
+        return await firebaseUserInstance.getIdToken(true); // Force refresh of the token
       } catch (error) {
         console.error("Error getting ID token:", error);
         return null;
@@ -338,6 +398,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithEmailAndPassword,
       signupWithEmailAndPassword,
       sendPasswordReset,
+      resendVerificationEmail,
       isLoading,
       getUserIdToken,
       refreshAuthUser

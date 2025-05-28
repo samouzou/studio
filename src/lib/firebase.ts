@@ -8,8 +8,9 @@ import {
   onAuthStateChanged, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword,
-  updateProfile, // Added for updating Auth user profile
-  sendPasswordResetEmail, // Added for password reset
+  updateProfile, 
+  sendPasswordResetEmail, 
+  sendEmailVerification, // Added
   type User as FirebaseUser 
 } from 'firebase/auth';
 import { 
@@ -30,7 +31,7 @@ import {
   writeBatch,
   onSnapshot 
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'; // Added Storage functions
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage'; 
 import { getFunctions } from 'firebase/functions';
 
 const firebaseConfigValues = {
@@ -55,9 +56,9 @@ const firebaseConfig: FirebaseOptions = firebaseConfigValues;
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app); // Initialize Firebase Storage
+const storage = getStorage(app); 
 const functions = getFunctions(app); 
-const googleAuthProvider = new GoogleAuthProvider(); // Instantiate GoogleAuthProvider
+const googleAuthProvider = new GoogleAuthProvider(); 
 
 
 export { 
@@ -72,7 +73,8 @@ export {
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  sendPasswordResetEmail, // Exporting sendPasswordResetEmail
+  sendPasswordResetEmail, 
+  sendEmailVerification, // Exported
   updateProfile, 
   type FirebaseUser,
   collection, 
