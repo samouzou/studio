@@ -15,8 +15,12 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp } from '@/lib/firebase';
 import type { Contract } from '@/types';
-import { ArrowLeft, Save, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, AlertTriangle, Wand2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+import { extractContractDetails, type ExtractContractDetailsOutput } from "@/ai/flows/extract-contract-details";
+import { summarizeContractTerms, type SummarizeContractTermsOutput } from "@/ai/flows/summarize-contract-terms";
+import { getNegotiationSuggestions, type NegotiationSuggestionsOutput } from "@/ai/flows/negotiation-suggestions-flow";
 
 export default function EditContractPage() {
   const params = useParams();
@@ -28,6 +32,7 @@ export default function EditContractPage() {
   const [contract, setContract] = useState<Contract | null>(null);
   const [isLoadingContract, setIsLoadingContract] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isReparsingAi, setIsReparsingAi] = useState(false);
 
   // Form state
   const [brand, setBrand] = useState('');
@@ -39,6 +44,14 @@ export default function EditContractPage() {
   const [clientAddress, setClientAddress] = useState('');
   const [paymentInstructions, setPaymentInstructions] = useState('');
   const [contractType, setContractType] = useState<Contract['contractType']>('other');
+  
+  // State for editable contract text and its AI-derived data
+  const [editedContractText, setEditedContractText] = useState('');
+  const [hasContractTextChanged, setHasContractTextChanged] = useState(false);
+  const [currentSummary, setCurrentSummary] = useState<string | undefined>(undefined);
+  const [currentExtractedTerms, setCurrentExtractedTerms] = useState<Contract['extractedTerms'] | undefined>(undefined);
+  const [currentNegotiationSuggestions, setCurrentNegotiationSuggestions] = useState<Contract['negotiationSuggestions'] | undefined>(undefined);
+
 
   useEffect(() => {
     if (id && user && !authLoading) {
@@ -55,11 +68,18 @@ export default function EditContractPage() {
             setProjectName(data.projectName || '');
             setAmount(data.amount || '');
             setDueDate(data.dueDate || '');
+            setContractType(data.contractType || 'other');
             setClientName(data.clientName || '');
             setClientEmail(data.clientEmail || '');
             setClientAddress(data.clientAddress || '');
             setPaymentInstructions(data.paymentInstructions || '');
-            setContractType(data.contractType || 'other');
+            
+            setEditedContractText(data.contractText || '');
+            setCurrentSummary(data.summary);
+            setCurrentExtractedTerms(data.extractedTerms);
+            setCurrentNegotiationSuggestions(data.negotiationSuggestions);
+            setHasContractTextChanged(false);
+
           } else {
             toast({ title: "Error", description: "Contract not found or access denied.", variant: "destructive" });
             router.push('/contracts');
@@ -76,6 +96,46 @@ export default function EditContractPage() {
       router.push('/login');
     }
   }, [id, user, authLoading, router, toast]);
+
+  const handleContractTextChange = (newText: string) => {
+    setEditedContractText(newText);
+    setHasContractTextChanged(true);
+  };
+
+  const handleAiReparse = async () => {
+    if (!editedContractText.trim()) {
+      toast({ title: "Cannot Parse", description: "Contract text is empty.", variant: "destructive" });
+      return;
+    }
+    setIsReparsingAi(true);
+    try {
+      const [details, summaryOutput, suggestions] = await Promise.all([
+        extractContractDetails({ contractText: editedContractText }),
+        summarizeContractTerms({ contractText: editedContractText }),
+        getNegotiationSuggestions({ contractText: editedContractText }),
+      ]);
+
+      // Update form fields with AI extracted details
+      setBrand(details.brand || '');
+      setAmount(details.amount || 0);
+      // Ensure dueDate is in YYYY-MM-DD format for the input type="date"
+      const aiDueDate = details.dueDate ? new Date(details.dueDate).toISOString().split('T')[0] : '';
+      setDueDate(aiDueDate);
+      
+      // Update AI derived data states
+      setCurrentSummary(summaryOutput.summary);
+      setCurrentExtractedTerms(details.extractedTerms ? JSON.parse(JSON.stringify(details.extractedTerms)) : undefined);
+      setCurrentNegotiationSuggestions(suggestions ? JSON.parse(JSON.stringify(suggestions)) : undefined);
+      
+      setHasContractTextChanged(false); // AI has processed the current text
+      toast({ title: "AI Re-processing Complete", description: "Contract details, summary, and suggestions updated." });
+    } catch (error) {
+      console.error("Error re-parsing with AI:", error);
+      toast({ title: "AI Error", description: "Could not re-process contract text.", variant: "destructive" });
+    } finally {
+      setIsReparsingAi(false);
+    }
+  };
 
   const handleSaveChanges = async (e: FormEvent) => {
     e.preventDefault();
@@ -96,7 +156,7 @@ export default function EditContractPage() {
       const contractDocRef = doc(db, 'contracts', id);
       const updates: Partial<Contract> & { updatedAt: Timestamp } = {
         brand: brand.trim(),
-        projectName: projectName.trim() || null, // Use null if empty to remove field
+        projectName: projectName.trim() || null,
         amount: contractAmount,
         dueDate: dueDate,
         contractType: contractType,
@@ -104,20 +164,23 @@ export default function EditContractPage() {
         clientEmail: clientEmail.trim() || null,
         clientAddress: clientAddress.trim() || null,
         paymentInstructions: paymentInstructions.trim() || null,
+        
+        contractText: editedContractText.trim() || null,
+        summary: currentSummary || null,
+        extractedTerms: currentExtractedTerms || null,
+        negotiationSuggestions: currentNegotiationSuggestions || null,
+        
         updatedAt: Timestamp.now(),
       };
 
-      // Filter out null values to effectively remove fields if they are emptied
       const finalUpdates: Record<string, any> = {};
       for (const key in updates) {
         if ((updates as Record<string, any>)[key] !== null) {
           finalUpdates[key] = (updates as Record<string, any>)[key];
         } else {
-           // For fields explicitly set to null (like projectName), ensure they are included for removal
            finalUpdates[key] = null;
         }
       }
-      // Ensure updatedAt is always included
       finalUpdates.updatedAt = Timestamp.now();
 
 
@@ -209,8 +272,8 @@ export default function EditContractPage() {
 
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Client & Payment Information</CardTitle>
-            <CardDescription>Update details relevant for invoicing the client.</CardDescription>
+            <CardTitle>Client Information</CardTitle>
+            <CardDescription>Update client details relevant for invoicing.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -223,22 +286,59 @@ export default function EditContractPage() {
                 <Input id="clientEmail" type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className="mt-1" />
               </div>
             </div>
-            <div className="mt-6">
+            <div>
               <Label htmlFor="clientAddress">Client Address</Label>
               <Textarea id="clientAddress" value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} rows={3} className="mt-1" />
             </div>
-            <div className="mt-6">
+             <div>
               <Label htmlFor="paymentInstructions">Payment Instructions</Label>
               <Textarea id="paymentInstructions" value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} rows={3} className="mt-1" />
             </div>
           </CardContent>
         </Card>
 
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Contract Text & AI Analysis</CardTitle>
+            <CardDescription>Edit the contract text and re-process with AI if needed. Changes to text or AI results will be saved.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="editedContractText">Contract Text</Label>
+              <Textarea
+                id="editedContractText"
+                value={editedContractText}
+                onChange={(e) => handleContractTextChange(e.target.value)}
+                rows={10}
+                className="mt-1 font-mono text-sm"
+                placeholder="Paste or edit contract text here..."
+              />
+            </div>
+            <Button
+              type="button"
+              onClick={handleAiReparse}
+              disabled={!hasContractTextChanged || isReparsingAi || isSaving}
+              variant="outline"
+            >
+              {isReparsingAi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+              Re-process Text with AI
+            </Button>
+            {currentSummary && (
+              <div>
+                <Label className="font-semibold">Current AI Summary:</Label>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap p-2 border rounded-md mt-1">{currentSummary}</p>
+              </div>
+            )}
+             {/* Can add similar displays for currentExtractedTerms and currentNegotiationSuggestions if needed */}
+          </CardContent>
+        </Card>
+
+
         <div className="mt-8 flex justify-end gap-3">
           <Button type="button" variant="outline" onClick={() => router.push(`/contracts/${id}`)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isSaving}>
+          <Button type="submit" disabled={isSaving || isReparsingAi}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Changes
           </Button>
@@ -247,3 +347,4 @@ export default function EditContractPage() {
     </>
   );
 }
+
