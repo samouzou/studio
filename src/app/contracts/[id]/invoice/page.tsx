@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { db, doc, getDoc, updateDoc, Timestamp, arrayUnion, serverTimestamp } from '@/lib/firebase';
-import { getFunctions, httpsCallableFromURL } from 'firebase/functions';
+import { getFunctions, httpsCallableFromURL, httpsCallable } from 'firebase/functions';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { StripePaymentForm } from '@/components/payments/stripe-payment-form'; 
@@ -111,21 +111,21 @@ export default function ManageInvoicePage() {
 
 
       const input: GenerateInvoiceHtmlInput = {
-        creatorName: user.displayName || "Your Name/Company",
-        creatorAddress: user.address || "Your Address, City, Country",
-        creatorEmail: user.email || "your@email.com",
-        clientName: contract.clientName || contract.brand,
-        clientAddress: contract.clientAddress,
-        clientEmail: contract.clientEmail,
+        creatorName: user.displayName || undefined,
+        creatorAddress: user.address || undefined,
+        creatorEmail: user.email || undefined,
+        clientName: contract.clientName || undefined,
+        clientAddress: contract.clientAddress || undefined,
+        clientEmail: contract.clientEmail || undefined,
         invoiceNumber: invoiceNumber,
         invoiceDate: new Date().toISOString().split('T')[0],
         dueDate: contract.dueDate,
         contractId: contract.id,
-        projectName: contract.projectName,
+        projectName: contract.projectName || undefined,
         deliverables: deliverablesForAI,
         totalAmount: contract.amount,
-        paymentInstructions: contract.paymentInstructions,
-        payInvoiceLink: currentPayUrl,
+        paymentInstructions: contract.paymentInstructions || undefined,
+        payInvoiceLink: currentPayUrl || undefined,
       };
       const result = await generateInvoiceHtml(input);
       setGeneratedInvoiceHtml(result.invoiceHtml);
@@ -181,6 +181,7 @@ export default function ManageInvoicePage() {
       const historyEntry = {
         timestamp: serverTimestamp(),
         action: `Invoice Status Changed to ${newStatus}`,
+         details: `Previous status: ${invoiceStatus}`,
       };
       await updateDoc(contractDocRef, {
         invoiceStatus: newStatus,
@@ -225,7 +226,8 @@ export default function ManageInvoicePage() {
         to: contract.clientEmail,
         subject: `Invoice ${invoiceNumber || contract.invoiceNumber} from ${user.displayName || 'Your Service Provider'}`,
         text: `Hello ${contract.clientName || contract.brand},\n\nPlease find attached your invoice ${invoiceNumber || contract.invoiceNumber} for ${contract.projectName || 'services rendered'}.\n\nTotal Amount Due: $${contract.amount}\nDue Date: ${new Date(contract.dueDate).toLocaleDateString()}\n\nClick here to pay: ${currentPayUrl}\n\nThank you,\n${user.displayName || 'Your Service Provider'}`,
-        html: invoiceContentToSend, 
+        html: invoiceContentToSend,
+        contractId: contract.id, // Include contractId for backend logging if needed
       };
 
       const response = await fetch(SEND_CONTRACT_NOTIFICATION_FUNCTION_URL, {
@@ -256,7 +258,7 @@ export default function ManageInvoicePage() {
       setContract(prev => prev ? {...prev, invoiceStatus: 'sent' } : null);
       setInvoiceStatus('sent');
       toast({ title: "Invoice Sent", description: `Invoice ${invoiceNumber} sent to ${contract.clientEmail}.` });
-      console.log(`LOG: Invoice ${invoiceNumber} sent to ${contract.clientEmail} for contract ID: ${contract.id}. Your backend 'sendContractNotification' should ideally log this to Firestore history too.`);
+      // console.log(`LOG: Invoice ${invoiceNumber} sent to ${contract.clientEmail} for contract ID: ${contract.id}. Your backend 'sendContractNotification' should ideally log this to Firestore history too.`);
 
     } catch (error: any) {
       console.error("Error sending invoice:", error);
@@ -275,11 +277,6 @@ export default function ManageInvoicePage() {
     if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
       toast({ title: "Stripe Error", description: "Stripe publishable key is not configured.", variant: "destructive" });
       console.error("Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is missing.");
-      return;
-    }
-    if (CREATE_PAYMENT_INTENT_FUNCTION_URL === "YOUR_CREATE_PAYMENT_INTENT_FUNCTION_URL_HERE") {
-      toast({ title: "Configuration Error", description: "Payment intent function URL is not configured.", variant: "destructive" });
-      console.error("CREATE_PAYMENT_INTENT_FUNCTION_URL is a placeholder and needs to be updated with your actual function URL.");
       return;
     }
 
@@ -490,3 +487,4 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+
