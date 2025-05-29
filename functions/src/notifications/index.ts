@@ -79,7 +79,7 @@ export const sendContractNotification = onRequest(async (request, response) => {
       userId,
       to,
       subject,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      timestamp: admin.firestore.Timestamp.now(),
       status: "sent",
     });
 
@@ -89,7 +89,7 @@ export const sendContractNotification = onRequest(async (request, response) => {
       if (contractId) {
         await db.collection("contracts").doc(contractId).update({
           invoiceHistory: admin.firestore.FieldValue.arrayUnion({
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            timestamp: admin.firestore.Timestamp.now(),
             action: "Invoice Sent to Client",
             details: `To: ${to}`,
           }),
@@ -159,7 +159,7 @@ export const sendPaymentReminder = onRequest(async (request, response) => {
       to,
       contractId,
       type: "payment_reminder",
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      timestamp: admin.firestore.Timestamp.now(),
       status: "sent",
     });
 

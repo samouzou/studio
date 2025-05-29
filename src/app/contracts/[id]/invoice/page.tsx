@@ -149,7 +149,7 @@ export default function ManageInvoicePage() {
       const newStatus = invoiceStatus === 'none' ? 'draft' : invoiceStatus;
 
       const historyEntry = {
-        timestamp: Timestamp.now(), // Use client-generated timestamp for arrayUnion
+        timestamp: Timestamp.now(),
         action: `Invoice Saved (Status: ${newStatus})`,
         details: `Invoice number: ${invoiceNumber}`,
       };
@@ -179,7 +179,7 @@ export default function ManageInvoicePage() {
     try {
       const contractDocRef = doc(db, 'contracts', contract.id);
       const historyEntry = {
-        timestamp: Timestamp.now(), // Use client-generated timestamp for arrayUnion
+        timestamp: Timestamp.now(),
         action: `Invoice Status Changed to ${newStatus}`,
          details: `Previous status: ${invoiceStatus}`,
       };
@@ -240,13 +240,19 @@ export default function ManageInvoicePage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to send email. Status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ message: "Server returned an error, but failed to parse its response." }));
+        // The root cause is likely in the backend's `sendContractNotification` function (e.g., Firestore write error with serverTimestamp in arrayUnion).
+        // This frontend code correctly reports the failure from the backend.
+        const detailedErrorMessage = `Server error: ${errorData.message || `Failed to send email. Status: ${response.status}`}`;
+        toast({ title: "Send Invoice Failed", description: detailedErrorMessage, variant: "destructive", duration: 7000 });
+        throw new Error(detailedErrorMessage);
       }
 
+      // If backend is responsible for history and status update, this client-side update might be redundant
+      // or could be done optimistically / after a re-fetch. For now, keeping it.
       const contractDocRef = doc(db, 'contracts', contract.id);
       const historyEntry = {
-        timestamp: Timestamp.now(), // Use client-generated timestamp for arrayUnion
+        timestamp: Timestamp.now(),
         action: 'Invoice Sent to Client',
         details: `To: ${contract.clientEmail}`,
       };
@@ -261,7 +267,11 @@ export default function ManageInvoicePage() {
 
     } catch (error: any) {
       console.error("Error sending invoice:", error);
-      toast({ title: "Send Failed", description: error.message || "Could not send invoice email.", variant: "destructive" });
+      // The toast for backend failure is now handled above if response.ok is false
+      // This catch block will handle other errors (e.g., network issues before fetch, getUserIdToken failure)
+      if (!String(error.message).startsWith("Server error:")) {
+         toast({ title: "Send Invoice Failed", description: error.message || "Could not send invoice email.", variant: "destructive" });
+      }
     } finally {
       setIsSending(false);
     }
@@ -297,10 +307,10 @@ export default function ManageInvoicePage() {
           'Authorization': `Bearer ${idToken}`,
         },
         body: JSON.stringify({
-          amount: contract.amount * 100,
+          amount: contract.amount * 100, // amount in cents
           currency: 'usd',
           contractId: contract.id,
-          clientEmail: contract.clientEmail || undefined,
+          clientEmail: contract.clientEmail || undefined, // Pass clientEmail for metadata
         }),
       });
 
@@ -349,7 +359,8 @@ export default function ManageInvoicePage() {
   }
 
   const canPay = (invoiceStatus === 'draft' || invoiceStatus === 'sent' || invoiceStatus === 'overdue') && contract.amount > 0 && !clientSecret;
-  const canSendInvoice = (!!generatedInvoiceHtml || !!contract.invoiceHtmlContent) && (invoiceStatus === 'draft' || invoiceStatus === 'none');
+  const canSendInvoice = (!!generatedInvoiceHtml || !!contract.invoiceHtmlContent) && (invoiceStatus === 'draft' || invoiceStatus === 'none' || invoiceStatus === 'sent');
+
 
   const appearance = {
     theme: 'stripe' as const,
@@ -442,6 +453,9 @@ export default function ManageInvoicePage() {
             {!contract.clientEmail && canSendInvoice && (
                 <p className="text-xs text-destructive">Client email is missing. Please add it to the contract to enable sending.</p>
             )}
+             {!contract.clientEmail && (invoiceStatus === 'draft' || invoiceStatus === 'none') && !canSendInvoice && (
+                <p className="text-xs text-orange-600 dark:text-orange-400">Tip: Add a client email to the contract to enable sending the invoice.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -489,4 +503,5 @@ export default function ManageInvoicePage() {
     </>
   );
 }
+
 
