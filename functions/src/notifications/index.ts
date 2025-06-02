@@ -36,7 +36,7 @@ async function verifyAuthToken(authHeader: string | undefined): Promise<string> 
 // Send contract notification
 export const sendContractNotification = onRequest(async (request, response) => {
   // Set CORS headers
-  response.set("Access-Control-Allow-Origin", "https://app.tryverza.com");
+  response.set("Access-Control-Allow-Origin", "*");
   response.set("Access-Control-Allow-Methods", "POST");
   response.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
