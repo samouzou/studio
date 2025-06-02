@@ -13,7 +13,7 @@ try {
     throw new Error("STRIPE_SECRET_KEY is not set");
   }
   stripe = new Stripe(stripeKey, {
-    apiVersion: "2025-04-30.basil",
+    apiVersion: "2025-05-28.basil",
   });
 } catch (error) {
   logger.error("Error initializing Stripe:", error);
