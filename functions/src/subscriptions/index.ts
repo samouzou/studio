@@ -39,7 +39,7 @@ try {
     } as unknown as Stripe;
   } else {
     stripe = new Stripe(stripeKey, {
-      apiVersion: "2025-04-30.basil",
+      apiVersion: "2025-05-28.basil",
     });
   }
 } catch (error) {

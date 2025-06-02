@@ -11,7 +11,7 @@ runConfig:
 env:
 
   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-    value: sololedger-lite.firebasestorage.app
+    value: verza-4da9e.firebasestorage.app
     availability:
       - BUILD
       - RUNTIME
