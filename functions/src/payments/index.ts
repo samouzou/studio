@@ -231,7 +231,7 @@ export const createPaymentIntent = onRequest(async (request, response) => {
     }
 
     // Convert amount to cents for Stripe (amount is in dollars)
-    const amountInCents = Math.round(amount * 100);
+    const amountInCents = Math.round(amount);
 
     // Create payment intent with transfer to creator's account
     const paymentIntent = await stripe.paymentIntents.create({
