@@ -101,7 +101,7 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
 
     try {
       await setDoc(userDocRef, updates);
-      console.log("User document created in Firestore for UID:", uid);
+      // console.log("User document created in Firestore for UID:", uid);
     } catch (error) {
       console.error("Error creating user document in Firestore:", error);
     }
@@ -161,7 +161,7 @@ const createUserDocument = async (firebaseUser: FirebaseUser) => {
     if (needsUpdate) {
       try {
         await setDoc(userDocRef, updates, { merge: true });
-        console.log("User document updated for UID:", firebaseUser.uid, "with updates:", updates);
+        // console.log("User document updated for UID:", firebaseUser.uid, "with updates:", updates);
       } catch (error) {
         console.error("Error updating user document:", error);
       }
