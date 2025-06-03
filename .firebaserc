@@ -2,6 +2,7 @@
   "projects": {
     "default": "verza-4da9e",
     "staging": "verza-4da9e",
+    "prod": "verza-4da9e"
   },
   "targets": {},
   "etags": {}
